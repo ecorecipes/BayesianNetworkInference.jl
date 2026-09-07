@@ -1,0 +1,9 @@
+/.quarto/
+/_freeze/
+**/*.quarto_ipynb
+# LaTeX intermediates (rendered .html/.md/.pdf outputs are committed)
+*/*.tex
+*/*.log
+*/*.aux
+*/*.toc
+*/*.out

@@ -1,0 +1,26 @@
+.DS_Store
+/Manifest.toml
+/Manifest-v*.toml
+docs/build/
+docs/Manifest.toml
+docs/Manifest-v*.toml
+
+# Coverage and allocation output from `Pkg.test(coverage=true)` and `--track-allocation`.
+*.cov
+*.mem
+*.jl.*.cov
+
+# LaTeX intermediates. Rendered documents are deliberate, committed outputs and stay
+# tracked: vignettes/*/*.{html,md,pdf}, docs/src/tutorials/**, proofs/*.{md,html,pdf}.
+# proofs/header.tex is a hand-written preamble, not an intermediate.
+*.tex
+*.aux
+*.log
+*.out
+*.toc
+!proofs/header.tex
+
+# Lean: dependency checkout, generated documents, and `lake update` backups.
+proofs/.lake/
+proofs/docs/
+proofs/*.bak

@@ -1,0 +1,105 @@
+name: CI
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+jobs:
+  test:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ['1.12', '1']
+        os: [ubuntu-latest]
+        include:
+          - version: '1'
+            os: macos-latest
+          - version: '1'
+            os: windows-latest
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          path: BayesianNetworkInference.jl
+      - uses: actions/checkout@v4
+        with:
+          repository: ecorecipes/FiniteKernels.jl
+          path: FiniteKernels.jl
+      - uses: actions/checkout@v4
+        with:
+          repository: ecorecipes/BayesianNetworkFormats.jl
+          path: BayesianNetworkFormats.jl
+      - uses: actions/checkout@v4
+        with:
+          repository: ecorecipes/BayesianNetworks.jl
+          path: BayesianNetworks.jl
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+      - uses: julia-actions/cache@v2
+        with:
+          cache-compiled: 'true'
+      - uses: julia-actions/julia-buildpkg@v1
+        with:
+          project: BayesianNetworkInference.jl
+      - uses: julia-actions/julia-runtest@v1
+        with:
+          project: BayesianNetworkInference.jl
+  vignette-sync:
+    name: Vignette sync check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - run: julia scripts/sync_vignettes.jl --check
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      statuses: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: BayesianNetworkInference.jl
+      - uses: actions/checkout@v4
+        with:
+          repository: ecorecipes/FiniteKernels.jl
+          path: FiniteKernels.jl
+      - uses: actions/checkout@v4
+        with:
+          repository: ecorecipes/BayesianNetworkFormats.jl
+          path: BayesianNetworkFormats.jl
+      - uses: actions/checkout@v4
+        with:
+          repository: ecorecipes/BayesianNetworks.jl
+          path: BayesianNetworks.jl
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
+        with:
+          cache-compiled: 'true'
+      - name: Install dependencies
+        run: |
+          julia --project=BayesianNetworkInference.jl/docs -e '
+            using Pkg
+            Pkg.develop([
+              PackageSpec(path="FiniteKernels.jl"),
+              PackageSpec(path="BayesianNetworkFormats.jl"),
+              PackageSpec(path="BayesianNetworks.jl"),
+              PackageSpec(path="BayesianNetworkInference.jl"),
+            ])
+            Pkg.instantiate()'
+      - name: Build and deploy docs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: julia --project=BayesianNetworkInference.jl/docs BayesianNetworkInference.jl/docs/make.jl

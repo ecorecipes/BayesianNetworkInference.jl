@@ -1,0 +1,204 @@
+---
+title: "Sampling and Monte Carlo checks"
+author: "Simon Frost"
+format:
+  html:
+    code-fold: false
+    toc: true
+  gfm:
+    toc: true
+  pdf: default
+engine: julia
+---
+
+## Overview
+
+Variable elimination is exact, but it is only as trustworthy as its implementation.
+`BayesianNetworkInference.jl` therefore cross-checks it in two independent ways: against
+the brute-force joint table (`brute_force_marginal`, and `BayesianNetworks.marginal` at
+the model level), and against **ancestral sampling**, which never multiplies a factor. This
+vignette draws samples from the SPEC section 45 reference habitat model, watches the
+empirical marginals converge to the exact posteriors, and uses the same machinery for
+conditional and interventional queries.
+
+## Setup
+
+
+```{julia}
+using BayesianNetworks
+using BayesianNetworkInference
+using Random
+```
+
+## The reference model and its exact marginals
+
+`reference_habitat_model()` is the seven-variable ecological network of the SPEC with
+every conditional probability table bound. `infer` compiles it to a factor graph and
+eliminates; the result is a normalised `Factor`.
+
+```{julia}
+m = reference_habitat_model()
+vars = variables(compile(m))
+```
+
+```{julia}
+exact = Dict(v => infer(m, v)[1] for v in vars)
+exact[:Occupancy].table
+```
+
+## Ancestral sampling
+
+`ancestral_sample(m, n)` visits the variables in topological order and draws each from
+its mechanism's kernel given the sampled parents (SPEC section 18). The result is an
+`AncestralSamples` table with one column per variable; `empirical_marginal` turns a
+column (or several) into a factor with the same scope and axes as the exact posterior,
+so the two can be compared directly.
+
+```{julia}
+s = ancestral_sample(m, 20_000; rng=MersenneTwister(2026))
+```
+
+```{julia}
+s[:Occupancy][1:8]
+```
+
+```{julia}
+emp = empirical_marginal(s, :Occupancy)
+emp.table, isapprox(emp, exact[:Occupancy]; atol=0.02)
+```
+
+Joint frequencies work the same way, and the ordering of the requested variables is the
+scope of the result.
+
+```{julia}
+emp_joint = empirical_marginal(s, [:Vegetation, :Occupancy])
+scope(emp_joint), maximum(abs, emp_joint.table .- infer(m, [:Vegetation, :Occupancy])[1].table)
+```
+
+## Convergence
+
+The Monte Carlo error of a relative frequency scales as $1/\sqrt{n}$. The table below
+reports, for growing sample sizes, the largest absolute deviation between an empirical
+marginal and the exact one over all seven variables, next to $1/\sqrt{n}$ for scale.
+Every row uses a fresh seed so the rows are independent draws.
+
+```{julia}
+function max_error(samples)
+    return maximum(maximum(abs, empirical_marginal(samples, v).table .- exact[v].table)
+                   for v in vars)
+end
+
+sizes = [100, 1_000, 10_000, 100_000]
+rows = map(enumerate(sizes)) do (i, n)
+    err = max_error(ancestral_sample(m, n; rng=MersenneTwister(100 + i)))
+    (n=n, max_error=round(err; digits=4), scale=round(1 / sqrt(n); digits=4))
+end
+for r in rows
+    println(lpad(r.n, 8), "  ", lpad(r.max_error, 9), "  ", lpad(r.scale, 8))
+end
+```
+
+The error falls by roughly a factor of three per tenfold increase in `n`, as expected,
+and the exact posterior never moves.
+
+## Conditional queries by rejection
+
+Ancestral samples come from the prior (or interventional) distribution, never the
+posterior. Conditioning by rejection, keeping only the samples consistent with the
+evidence, is the crudest possible posterior estimate, but it is independent of every
+factor operation and therefore a useful check of `infer` with evidence.
+
+```{julia}
+keep = s[:Vegetation] .== :dense
+kept = AncestralSamples(s.vars, s.axes, s.states[keep, :])
+length(kept)
+```
+
+```{julia}
+posterior_mc = empirical_marginal(kept, :Occupancy)
+posterior_ve, _ = infer(m, :Occupancy; evidence=Dict(:Vegetation => :dense))
+posterior_mc.table, posterior_ve.table
+```
+
+```{julia}
+isapprox(posterior_mc, posterior_ve; atol=0.02)
+```
+
+`posterior` returns the same numbers as a dictionary keyed by state.
+
+```{julia}
+posterior(m, :Occupancy; evidence=Dict(:Vegetation => :dense))
+```
+
+## Interventions are respected by the sampler
+
+A hard intervention rewrites the mechanism of a variable into a point mass, so both the
+sampler and the exact engine see the intervened model. Forcing low grazing pressure changes
+the occupancy distribution, and the samples agree with `infer` on the intervened model.
+
+```{julia}
+m_do = do_intervention(m, :GrazingPressure => :low)
+s_do = ancestral_sample(m_do, 20_000; rng=MersenneTwister(3))
+all(==(:low), s_do[:GrazingPressure])
+```
+
+```{julia}
+empirical_marginal(s_do, :Occupancy).table, infer(m_do, :Occupancy)[1].table
+```
+
+```{julia}
+isapprox(empirical_marginal(s_do, :Occupancy), infer(m_do, :Occupancy)[1]; atol=0.02)
+```
+
+## Samples from BayesianNetworks.jl
+
+`BayesianNetworks.sample(m, n)` draws the same distribution as a vector of dictionaries.
+`AncestralSamples(m, samples)` converts that output so that it can be compared through the
+same `empirical_marginal`, and `empirical_marginal(m, samples, var)` does both steps at
+once.
+
+```{julia}
+bs = sample(m, 20_000; rng=MersenneTwister(4))
+bs[1]
+```
+
+```{julia}
+converted = AncestralSamples(m, bs)
+empirical_marginal(m, bs, :Occupancy) == empirical_marginal(converted, :Occupancy)
+```
+
+```{julia}
+isapprox(empirical_marginal(m, bs, :Occupancy), exact[:Occupancy]; atol=0.02)
+```
+
+## A deterministic mechanism: asia
+
+The `either` node of the asia network is a logical OR of `lung` and `tub`. Sampling
+respects a deterministic kernel exactly (no sample has `lung = yes` and `either = no`),
+and the sampled marginal of `dysp` agrees with the exact `P(dysp = yes) = 0.4360`.
+
+```{julia}
+asia = read_bayesnet(fixture_path("bif/asia.bif"))
+sa = ancestral_sample(asia, 20_000; rng=MersenneTwister(5))
+all(sa[:either][i] == :yes for i in 1:length(sa) if sa[:lung][i] == :yes)
+```
+
+```{julia}
+empirical_marginal(sa, :dysp).table, infer(asia, :dysp)[1].table
+```
+
+## Summary
+
+Ancestral sampling draws from the joint by walking the network in topological order, so
+a seeded run is reproducible, deterministic mechanisms are respected exactly, and an
+intervention is sampled as an intervention rather than as evidence. Empirical marginals
+converge to the exact ones at the expected Monte Carlo rate, which makes sampling a
+cheap independent check on the exact backends [@KollerFriedman2009]; rejection sampling
+answers conditional queries but pays for rare evidence. The next vignette, *Junction
+trees and belief propagation*, returns to exact inference and computes every marginal in
+a single pass.
+
+## References
+
+::: {#refs}
+:::

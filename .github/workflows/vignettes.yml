@@ -1,0 +1,70 @@
+# Renders the quarto vignettes with the Julia engine to HTML, GitHub-flavoured
+# Markdown and PDF. Manual + weekly; not a required check (see CONTRIBUTING.md).
+name: Vignettes
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: BayesianNetworkInference.jl
+      - uses: actions/checkout@v4
+        with:
+          repository: ecorecipes/FiniteKernels.jl
+          path: FiniteKernels.jl
+      - uses: actions/checkout@v4
+        with:
+          repository: ecorecipes/BayesianNetworkFormats.jl
+          path: BayesianNetworkFormats.jl
+      - uses: actions/checkout@v4
+        with:
+          repository: ecorecipes/BayesianNetworks.jl
+          path: BayesianNetworks.jl
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12'
+      - uses: julia-actions/cache@v2
+        with:
+          cache-compiled: 'true'
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          tinytex: true
+      - name: Install PDF prerequisites
+        # librsvg2-bin provides rsvg-convert, which quarto uses to embed SVG
+        # figures (Graphviz output) in the PDF. stix2-otf supplies the STIX Two
+        # text/math fonts; the remaining packages are used by the quarto template.
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq librsvg2-bin
+          tlmgr install stix2-otf koma-script fvextra
+      - name: Fetch JuliaMono
+        # The PDF format uses JuliaMono (SIL OFL) as the monospace font, looked up
+        # via fontspec at ../../fonts/JuliaMono/ relative to vignettes/ (see
+        # vignettes/_quarto.yml), i.e. $GITHUB_WORKSPACE/fonts/JuliaMono/ here.
+        run: |
+          mkdir -p fonts/JuliaMono
+          curl -sSL https://github.com/cormullion/juliamono/releases/latest/download/JuliaMono-ttf.tar.gz | tar -xz -C fonts/JuliaMono
+      - name: Instantiate vignette environment
+        run: julia --project=BayesianNetworkInference.jl/vignettes -e 'using Pkg; Pkg.instantiate(); Pkg.precompile()'
+      - uses: actions/cache@v4
+        with:
+          path: BayesianNetworkInference.jl/vignettes/_freeze
+          key: freeze-${{ runner.os }}-${{ hashFiles('BayesianNetworkInference.jl/vignettes/Manifest.toml', 'BayesianNetworkInference.jl/vignettes/**/*.qmd') }}
+      - name: Render (html, gfm, pdf)
+        working-directory: BayesianNetworkInference.jl/vignettes
+        run: quarto render
+      - name: Check docs are in sync
+        working-directory: BayesianNetworkInference.jl
+        run: julia scripts/sync_vignettes.jl --check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vignettes
+          path: |
+            BayesianNetworkInference.jl/vignettes/*/*.md
+            BayesianNetworkInference.jl/vignettes/*/*.html
+            BayesianNetworkInference.jl/vignettes/*/*.pdf
+            BayesianNetworkInference.jl/vignettes/*/*_files

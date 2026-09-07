@@ -1,0 +1,59 @@
+project:
+  type: default
+  render:
+    - "*/*.qmd"
+
+# NOTE: quarto does not reliably apply a project-wide engine (quarto-cli#3157),
+# so every .qmd also sets `engine: julia` in its own front matter.
+engine: julia
+
+julia:
+  project: "."
+
+# Shared workspace bibliography, copied here by scripts/sync_references.jl.
+# quarto resolves the path relative to this project directory (vignettes/).
+bibliography: references.bib
+link-citations: true
+
+format:
+  gfm:
+    toc: true
+  html:
+    theme: cosmo
+    toc: true
+    embed-resources: true
+  pdf:
+    documentclass: scrartcl
+    papersize: a4
+    mainfont: "STIX Two Text"
+    sansfont: "STIX Two Text"
+    mathfont: "STIX Two Math"
+    # JuliaMono (SIL OFL) lives in the shared ../../fonts/JuliaMono/ directory of
+    # the bbn checkout; the Path is resolved relative to each vignette directory
+    # because lualatex is run from there.
+    monofont: "JuliaMono-Regular"
+    monofontoptions:
+      - "Path=../../../fonts/JuliaMono/"
+      - "Extension=.ttf"
+      - "BoldFont=JuliaMono-Bold"
+      - "ItalicFont=JuliaMono-RegularItalic"
+      - "BoldItalicFont=JuliaMono-BoldItalic"
+      - "Scale=MatchLowercase"
+    pdf-engine: lualatex
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    colorlinks: true
+    linkcolor: "blue"
+    urlcolor: "blue"
+    keep-tex: false
+    # Wrap long source and output lines in the PDF; the vignettes print wide
+    # tables and box-drawing `show` output that would otherwise overflow.
+    include-in-header:
+      text: |
+        \usepackage{fvextra}
+        \DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\},breaklines,breakanywhere,breaksymbolleft={},fontsize=\small}
+        \RecustomVerbatimEnvironment{verbatim}{Verbatim}{breaklines,breakanywhere,breaksymbolleft={},fontsize=\small}
+
+execute:
+  freeze: auto

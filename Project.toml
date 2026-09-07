@@ -1,0 +1,45 @@
+name = "BayesianNetworkInference"
+uuid = "195c3fd5-7fa7-45ed-aaa0-a92a9a2fe9e5"
+version = "0.1.0"
+authors = ["Simon Frost"]
+
+[deps]
+AMD = "14f7f29c-3bd6-536c-9a0b-7339e30b5a3e"
+BayesianNetworks = "47d2e50c-3d9a-425e-96fd-023c794d3c65"
+CliqueTrees = "60701a23-6482-424a-84db-faee86b9b1f8"
+FiniteKernels = "2ee73795-50db-4096-9573-22982ed4949b"
+Graphs = "86223c79-3864-5bf0-83f7-82e725a168b6"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+TreeWidthSolver = "7d267fc5-9ace-409f-a54c-cd2374872a55"
+
+[sources]
+FiniteKernels = {path = "../FiniteKernels.jl"}
+BayesianNetworks = {path = "../BayesianNetworks.jl"}
+BayesianNetworkFormats = {path = "../BayesianNetworkFormats.jl"}
+
+[compat]
+AMD = "0.5"
+BayesianNetworkFormats = "0.1"
+BayesianNetworks = "0.1"
+CliqueTrees = "1"
+FiniteKernels = "0.1"
+Graphs = "1"
+LinearAlgebra = "1"
+Logging = "1"
+Random = "1"
+SparseArrays = "1"
+Statistics = "1"
+Test = "1"
+TreeWidthSolver = "0.3"
+julia = "1.12"
+
+[extras]
+BayesianNetworkFormats = "590d4596-919e-4d5f-b4a5-097a6400eab8"
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test", "BayesianNetworkFormats", "Logging"]

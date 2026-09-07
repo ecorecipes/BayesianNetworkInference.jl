@@ -1,0 +1,14 @@
+[deps]
+BayesianNetworkFormats = "590d4596-919e-4d5f-b4a5-097a6400eab8"
+BayesianNetworkInference = "195c3fd5-7fa7-45ed-aaa0-a92a9a2fe9e5"
+BayesianNetworks = "47d2e50c-3d9a-425e-96fd-023c794d3c65"
+CliqueTrees = "60701a23-6482-424a-84db-faee86b9b1f8"
+Graphs = "86223c79-3864-5bf0-83f7-82e725a168b6"
+FiniteKernels = "2ee73795-50db-4096-9573-22982ed4949b"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+
+[sources]
+BayesianNetworkInference = {path = ".."}
+FiniteKernels = {path = "../../FiniteKernels.jl"}
+BayesianNetworks = {path = "../../BayesianNetworks.jl"}
+BayesianNetworkFormats = {path = "../../BayesianNetworkFormats.jl"}

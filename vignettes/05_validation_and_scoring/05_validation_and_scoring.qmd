@@ -1,0 +1,272 @@
+---
+title: "Validation and scoring"
+author: "Simon Frost"
+format:
+  html:
+    code-fold: false
+    toc: true
+  gfm:
+    toc: true
+  pdf: default
+engine: julia
+---
+
+## Overview
+
+A Bayesian network that looks plausible and answers queries coherently has not been
+shown to predict anything. Reviews of ecological Bayesian networks return to this point
+repeatedly [@Marcot2006; @ChenPollino2012]: sensitivity analysis is not validation, and
+apparent fit is not forecast
+quality. What is asked for instead is **out-of-sample, decision-focused validation** —
+a holdout separated in space or time, a calibration assessment, proper scoring rules
+such as the Brier and log scores, and a comparison against a baseline that the network
+has to beat.
+
+This vignette walks through that workflow on the SPEC section 45 reference habitat
+model: simulate a dataset of cases with a seeded generator, hold out whole groups of a
+grouping variable, predict a withheld target, score the predictions, tabulate the
+calibration curve, compare against the marginal prior, and finally rank the variables by
+how much they would reduce the uncertainty of the target.
+
+One honesty note before the numbers. The cases here are *simulated from the model that
+is then scored*, so this is a check of the machinery and a demonstration of the
+reporting, not evidence about any real system. In a real study the cases come from
+monitoring and the network's tables come from elsewhere; every number below would then
+mean what it says.
+
+## Setup
+
+```{julia}
+using BayesianNetworks
+using BayesianNetworkInference
+using Random
+```
+
+```{julia}
+m = reference_habitat_model()
+variables(compile(m))
+```
+
+## A dataset of cases
+
+A dataset is a `Cases`: a vector of `Dict{Symbol,Symbol}` observations, each mapping a
+variable to an observed state. Cases may be complete or partial — a variable a case does
+not record is simply not entered as evidence, which is the normal situation with
+ecological monitoring. `Cases(ancestral_sample(m, n; rng))` turns a seeded sample table
+into complete cases.
+
+```{julia}
+rng = MersenneTwister(20260907)
+cases = Cases(ancestral_sample(m, 600; rng))
+```
+
+```{julia}
+variables(cases)
+```
+
+```{julia}
+cases[1]
+```
+
+## Holding out by a group
+
+`holdout(cases; by, fraction, rng)` returns two index vectors. Without `by` it draws
+cases uniformly; with `by = :X` it groups the cases by their observed state of `X` and
+draws **whole groups**, so no group is ever split between the two sides. That is how a
+spatial or temporal holdout is expressed here: record the catchment, region or year as a
+variable of the case and hold out by it. Because whole groups move together the
+requested fraction is only approximate: a shuffled group joins the test set only while
+that brings the split closer to the target, and with three climate states there is no
+way to hold out exactly 30% without cutting one of them.
+
+```{julia}
+train, test = holdout(cases; by=:Climate, fraction=0.3, rng)
+(train=length(train), test=length(test))
+```
+
+```{julia}
+climates = sort(unique(c[:Climate] for c in cases))
+[(climate=c,
+  in_train=count(i -> cases[i][:Climate] == c, train),
+  in_test=count(i -> cases[i][:Climate] == c, test)) for c in climates]
+```
+
+Every climate state sits entirely on one side. `kfold(cases; k, by, rng)` does the same
+for `k` folds. Neither function refits anything: this package has no parameter
+estimation, so the honest use of a split here is to score tables that came from
+elsewhere on cases they did not see. Refitting per fold would mean re-estimating every
+conditional probability table from the training indices and rebuilding the model with
+`bind_cpt` before scoring each test fold.
+
+## Predicting a withheld target
+
+`predict` withholds the target and enters the rest of the case (restricted to
+`evidence_vars`) as evidence. Here the surveyor is assumed to see the vegetation and the
+habitat quality but not the occupancy.
+
+```{julia}
+held = cases[test]
+p = predict(m, held, :Occupancy; evidence_vars=[:Vegetation, :HabitatQuality])
+```
+
+```{julia}
+round.(p.probabilities[1:5, :]; digits=4)
+```
+
+## Proper scoring rules
+
+A **proper** scoring rule is one that a forecaster cannot improve by misreporting their
+beliefs. The multi-category Brier score is the mean squared distance between the
+predicted distribution and the indicator of what happened (lower is better); the log
+score is the mean log probability of what happened (higher is better; the `floor`
+keyword decides what a zero-probability outcome costs); the spherical score is a bounded
+alternative that stays finite when a realised outcome was given probability zero.
+
+```{julia}
+(brier=round(brier_score(p); digits=4),
+ log=round(log_score(p); digits=4),
+ spherical=round(spherical_score(p); digits=4))
+```
+
+Accuracy of the maximum-a-posteriori state and its confusion matrix are reported beside
+those scores, never instead of them: accuracy throws away how confident the network was.
+
+```{julia}
+confusion_matrix(p)
+```
+
+## Calibration
+
+Calibration asks whether the predicted probabilities correspond to observed frequencies:
+of the cases where the network said 0.7, about 70% should have been occupied.
+`calibration_curve` bins the predicted probability of one state and reports the mean
+prediction, the observed frequency and the count of each bin; `calibration_error` is the
+count-weighted mean gap, the expected calibration error.
+
+```{julia}
+curve = calibration_curve(p, :present; bins=5)
+```
+
+```{julia}
+round(calibration_error(p, :present; bins=5); digits=4)
+```
+
+The network emits only two distinct probabilities here, one for each habitat-quality
+state, so only two of the five bins are populated and the curve is a coarse instrument.
+With real, more varied evidence the populated bins are the ones to read, and the count
+column says how much each of them is worth.
+
+## Beating the prior
+
+The comparison that matters is against a baseline the network has to beat. `baseline`
+is the "always predict the marginal prior" forecaster: it ignores the evidence
+completely.
+
+```{julia}
+prior = baseline(m, held, :Occupancy)
+round.(prior.probabilities[1, :]; digits=4)
+```
+
+`evaluate` computes every score for both and prints them side by side.
+
+```{julia}
+report = evaluate(m, held, :Occupancy; evidence_vars=[:Vegetation, :HabitatQuality])
+```
+
+Discrimination — the quality of the *ranking* the network induces — is the area under
+the ROC curve for a chosen state, one versus rest. A prior baseline gives every case the
+same score, so its AUC is exactly 0.5. AUC is only worth reporting when ranking cases is
+a sensible thing to do with the target, for instance when prioritising sites for survey;
+a well-ranked but badly calibrated network is still a bad probability statement.
+
+```{julia}
+(auc_network=round(auc(p, :present); digits=4),
+ auc_prior=round(auc(prior, :present); digits=4))
+```
+
+```{julia}
+r = roc_curve(p, :present)
+[(threshold=round(t; digits=4), fpr=round(f; digits=4), tpr=round(v; digits=4))
+ for (t, f, v) in zip(r.thresholds, r.fpr, r.tpr)]
+```
+
+The curve has very few points because, given the habitat quality, the vegetation tells
+the network nothing further about occupancy — the two are d-separated — so every case
+receives one of only two posteriors, up to floating-point differences in how each was
+computed. That is also why the calibration curve above populated only two of its bins,
+and it is exactly what the mutual-information ranking below makes explicit.
+
+## Ranking the variables by mutual information
+
+Validation says whether the network predicts; sensitivity says what it depends on.
+`sensitivity` ranks every other variable by its mutual information with the target and
+reports that as a fraction of the target's entropy — the proportion of the remaining
+uncertainty that observing the variable would remove on average.
+
+```{julia}
+[(variable=r.variable,
+  bits=round(r.mutual_information; digits=4),
+  entropy_reduction=round(r.entropy_reduction; digits=4))
+ for r in sensitivity(m, :Occupancy)]
+```
+
+```{julia}
+round(entropy(m, :Occupancy); digits=4)
+```
+
+Mutual information is exactly zero for variables the evidence d-separates from the
+target. Conditioning on the whole Markov blanket of `Occupancy` — here just
+`HabitatQuality` — makes every other variable uninformative:
+
+```{julia}
+[(variable=r.variable, bits=round(r.mutual_information; digits=12))
+ for r in sensitivity(m, :Occupancy; evidence=Dict(:HabitatQuality => :good))]
+```
+
+Where the ranking averages over what a variable might turn out to be, `tornado` reports
+the extremes: how far a single finding could move the answer.
+
+```{julia}
+[(variable=r.variable, low=round(r.low; digits=4), high=round(r.high; digits=4),
+  range=round(r.range; digits=4), low_state=r.low_state, high_state=r.high_state)
+ for r in tornado(m, :Occupancy, :present)]
+```
+
+## Summary
+
+- A dataset is a `Cases`: a vector of `Dict{Symbol,Symbol}` observations, complete or
+  partial. `Cases(ancestral_sample(m, n; rng))` simulates one reproducibly.
+- `holdout` and `kfold` produce index splits; `by` keeps whole groups together, which is
+  how spatial and temporal holdout is expressed. They split cases and do not refit
+  conditional probability tables.
+- `predict` withholds the target and returns one posterior per case; `brier_score`,
+  `log_score` and `spherical_score` are proper scoring rules over those posteriors, and
+  `accuracy` with `confusion_matrix` describes the maximum-a-posteriori classification.
+- `calibration_curve` and `calibration_error` check that stated probabilities match
+  observed frequencies; `roc_curve` and `auc` describe discrimination, and only when a
+  ranking interpretation is meaningful.
+- `baseline` is the marginal prior, and `evaluate` prints the whole report against it, so
+  "does the network beat always predicting the prior?" has an answer.
+- `sensitivity`, `entropy`, `mutual_information` and `tornado` say what the model depends
+  on. They describe the model, not the world; they are not a substitute for the scores
+  above.
+
+This is the last vignette of `BayesianNetworkInference.jl`. The same scoring and
+sensitivity machinery is applied to published ecological networks in the vignettes of
+`EcologicalBayesianNetworks.jl`, and to decisions rather than predictions in
+`InfluenceDiagrams.jl`.
+
+## References
+
+@Brier1950 introduced the score that carries his name, as a verification measure for
+probabilistic weather forecasts. @GneitingRaftery2007 is the modern reference for
+proper scoring rules, including the logarithmic and spherical scores used here, and for
+why propriety is the property that matters when a forecast will be acted on.
+@Marcot2012 sets out the performance and uncertainty metrics expected of an ecological
+Bayesian network, including the entropy-reduction (mutual information) sensitivity
+metric that `sensitivity` computes. @ChenPollino2012 give the good-practice
+account of the whole life cycle, in which out-of-sample validation, calibration and a
+baseline comparison are quality gates rather than optional extras.
+
+::: {#refs}
+:::

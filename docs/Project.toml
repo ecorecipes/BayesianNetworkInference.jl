@@ -1,0 +1,17 @@
+[deps]
+BayesianNetworkFormats = "590d4596-919e-4d5f-b4a5-097a6400eab8"
+BayesianNetworkInference = "195c3fd5-7fa7-45ed-aaa0-a92a9a2fe9e5"
+BayesianNetworks = "47d2e50c-3d9a-425e-96fd-023c794d3c65"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+DocumenterCitations = "daee34ce-89f3-4625-b898-19384cb65244"
+FiniteKernels = "2ee73795-50db-4096-9573-22982ed4949b"
+
+[sources]
+BayesianNetworkInference = {path = ".."}
+BayesianNetworks = {path = "../../BayesianNetworks.jl"}
+BayesianNetworkFormats = {path = "../../BayesianNetworkFormats.jl"}
+FiniteKernels = {path = "../../FiniteKernels.jl"}
+
+[compat]
+Documenter = "1"
+DocumenterCitations = "1"
