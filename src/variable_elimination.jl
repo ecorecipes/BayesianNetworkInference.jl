@@ -50,6 +50,13 @@ function _check_query(fg::FactorGraph, query, evidence)
     return nothing
 end
 
+function _require_evidence_mass(mass, evidence)
+    iszero(mass) &&
+        throw(KernelNormalizationError("cannot form a posterior: the evidence $(sort!(collect(evidence); by=first)) has zero total mass",
+                                       1.0, 0.0))
+    return nothing
+end
+
 # Strategy restricted to the variables that survive conditioning.
 _restrict(strategy::EliminationStrategy, evidence) = strategy
 function _restrict(strategy::UserOrder, evidence)

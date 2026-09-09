@@ -221,8 +221,9 @@ function predict(fg::FactorGraph, cases, target::Symbol;
     return Predictions(target, ax, probs, outcomes, ev_vars)
 end
 
-function predict(m::BayesModel, cases, target::Symbol; kwargs...)
-    return predict(compile(m), cases, target;
+function predict(m::BayesModel, cases, target::Symbol;
+                 atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
+    return predict(compile(m; atol=atol), cases, target;
                    base_evidence=Dict{Symbol,Symbol}(BayesianNetworks.evidence(m)),
                    kwargs...)
 end
@@ -905,8 +906,9 @@ function evaluate(fg::FactorGraph, cases, target::Symbol;
                             calibration_error(b, st; bins), both ? auc(b, st) : NaN)
 end
 
-function evaluate(m::BayesModel, cases, target::Symbol; kwargs...)
-    return evaluate(compile(m), cases, target;
+function evaluate(m::BayesModel, cases, target::Symbol;
+                  atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
+    return evaluate(compile(m; atol=atol), cases, target;
                     base_evidence=Dict{Symbol,Symbol}(BayesianNetworks.evidence(m)),
                     kwargs...)
 end

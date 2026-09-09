@@ -12,7 +12,7 @@ function _model_evidence(m::BayesModel, ev)
 end
 
 """
-    infer(m::BayesModel, query; evidence=Dict{Symbol,Symbol}(), backend=VariableElimination())
+    infer(m::BayesModel, query; evidence=Dict{Symbol,Symbol}(), backend=VariableElimination(), atol=DEFAULT_ATOL)
         -> (posterior::Factor, diagnostics::InferenceDiagnostics)
 
 `P(query | evidence)` on a `BayesianNetworks.BayesModel`: the model is
@@ -20,6 +20,9 @@ end
 `backend` (see the [`FactorGraph`](@ref) method of `infer`).
 `query` is a variable or a vector of variables; the posterior is a normalised
 factor with that scope (a one-variable factor for a single symbol).
+`atol` controls kernel-normalization validation during compilation, not the
+convergence tolerance of an approximate backend. The other model-facing
+inference, sampling, scoring and sensitivity entry points accept it too.
 
 The evidence used is the evidence recorded on the model by `observe` merged
 with the explicit `evidence` (a dictionary, a vector of pairs or a single
@@ -56,8 +59,10 @@ true
 """
 function infer(m::BayesModel, query::AbstractVector{Symbol};
                evidence=Dict{Symbol,Symbol}(),
-               backend::InferenceBackend=VariableElimination())
-    return infer(compile(m), query; evidence=_model_evidence(m, evidence), backend)
+               backend::InferenceBackend=VariableElimination(),
+               atol::Real=BayesianNetworks.DEFAULT_ATOL)
+    return infer(compile(m; atol=atol), query; evidence=_model_evidence(m, evidence),
+                 backend)
 end
 infer(m::BayesModel, query::Symbol; kwargs...) = infer(m, [query]; kwargs...)
 
@@ -89,8 +94,10 @@ julia> ms[:Vegetation].table
 ```
 """
 function all_marginals(m::BayesModel; evidence=Dict{Symbol,Symbol}(),
-                       backend::InferenceBackend=JunctionTree())
-    return all_marginals(compile(m); evidence=_model_evidence(m, evidence), backend)
+                       backend::InferenceBackend=JunctionTree(),
+                       atol::Real=BayesianNetworks.DEFAULT_ATOL)
+    return all_marginals(compile(m; atol=atol); evidence=_model_evidence(m, evidence),
+                         backend)
 end
 
 """
@@ -132,8 +139,9 @@ The columns of the result follow the topological order of the model. Throws
 `BayesianNetworks.sample(m, n)` draws the same distribution as a vector of
 dictionaries; convert its output with `AncestralSamples(m, samples)` to compare it with exact posteriors through [`empirical_marginal`](@ref).
 """
-function ancestral_sample(m::BayesModel, n::Integer; rng::AbstractRNG=default_rng())
-    kernels, order, parent_names, _ = _model_kernels(m)
+function ancestral_sample(m::BayesModel, n::Integer; rng::AbstractRNG=default_rng(),
+                          atol::Real=BayesianNetworks.DEFAULT_ATOL)
+    kernels, order, parent_names, _ = _model_kernels(m; atol=atol)
     return ancestral_sample(kernels, order, parent_names, n; rng)
 end
 

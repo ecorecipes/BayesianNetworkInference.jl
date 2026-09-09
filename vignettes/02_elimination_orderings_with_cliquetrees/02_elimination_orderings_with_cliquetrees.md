@@ -157,11 +157,19 @@ results = map([MinFill(), MinDegree(), AMDOrder()]) do s
      multiplications=d.n_multiplications, seconds=round(t; digits=4))
 end
 foreach(println, results)
+(julia = string(VERSION), cpu = Sys.CPU_NAME, threads = Threads.nthreads(),
+ repetitions = 1, statistic = "single run after warm-up")
 ```
 
     (strategy = MinFill, width = 4, max_factor_size = 32, multiplications = 59, seconds = 0.0006)
     (strategy = MinDegree, width = 4, max_factor_size = 32, multiplications = 59, seconds = 0.0004)
     (strategy = AMDOrder, width = 4, max_factor_size = 32, multiplications = 59, seconds = 0.0004)
+
+    (julia = "1.12.7", cpu = "apple-m1", threads = 1, repetitions = 1, statistic = "single run after warm-up")
+
+These are measurements of this execution, not portable timing
+guarantees. Repeated measurements would be needed for a performance
+comparison.
 
 A poor order shows up immediately: eliminating in reverse topological
 order builds large intermediate factors.
@@ -172,7 +180,7 @@ t = @elapsed post_rev, d_rev = variable_elimination(big, query; order=reverse_or
 (width=d_rev.treewidth, max_factor_size=d_rev.max_factor_size, seconds=round(t; digits=4))
 ```
 
-    (width = 7, max_factor_size = 256, seconds = 0.5411)
+    (width = 7, max_factor_size = 256, seconds = 0.5805)
 
 All orders give the same posterior:
 

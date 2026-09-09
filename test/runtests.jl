@@ -21,4 +21,5 @@ include("networks.jl")
     include("test_model_bridge.jl")
     include("test_scores.jl")
     include("test_sensitivity.jl")
+    include("test_regressions.jl")
 end

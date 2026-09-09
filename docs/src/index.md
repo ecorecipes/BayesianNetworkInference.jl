@@ -20,8 +20,9 @@ unnormalised tensor over an ordered scope, closed under pointwise product
 (`multiply`) and summation (`marginalize`). The two are different types with
 explicit conversions:
 
-- `Factor(k, inputs, output)` has scope `(inputs..., output)` and the
-  parents-first table `cpt(k)` (ADR 0002);
+- `Factor(k, inputs, output)` uses first-occurrence scope order and the
+  parents-first table `cpt(k)` (ADR 0002), taking its diagonal when input
+  slots repeat rather than treating repeated variables as independent axes;
 - `FiniteKernel(f, inputs, outputs)` reorders to outputs-first and checks
   normalisation, throwing `KernelNormalizationError` otherwise.
 
@@ -48,9 +49,9 @@ infer(m, :Occupancy)[1] ≈ Factor(marginal(m, :Occupancy), :Occupancy)   # brut
 
 ## Model bridge
 
-[`compile`](@ref)`(m::BayesModel)` produces one factor per mechanism with scope
-`(parents..., child)` in `input_position` order and records `(variable,
-mechanism, id)` in `fg.provenance`. `infer(m, query; evidence, backend)`
+[`compile`](@ref)`(m::BayesModel)` produces one factor per mechanism, reading
+parents in `input_position` order, identifying repeated slots diagonally and
+recording `(variable, mechanism, id)` in `fg.provenance`. `infer(m, query; evidence, backend)`
 merges the explicit evidence with the evidence recorded by `observe`
 (explicit entries win); hard and soft interventions are mechanism rewrites,
 so an intervened model compiles and infers unchanged. Sampling
@@ -80,11 +81,39 @@ single-variable posterior ([`all_marginals`](@ref), also on a `BayesModel`);
 [`infer`](@ref) answers any query that lies in one clique and falls back to
 variable elimination otherwise (reported by
 `JunctionTreeDiagnostics.fallback`). [`BeliefPropagation`](@ref) runs sum-product
-message passing on the factor graph ([`belief_propagation`](@ref)): exact
-when the conditioned graph is a tree ([`is_tree`](@ref)), the loopy
-approximation otherwise, with damping, a tolerance, an iteration cap and
-[`BPDiagnostics`](@ref). All three backends report impossible evidence the
-same way, with a `KernelNormalizationError`.
+message passing on the factor graph ([`belief_propagation`](@ref)): its
+sum-product fixed points on feasible conditioned trees ([`is_tree`](@ref))
+are exact, while loopy beliefs are approximations. It has damping, a
+tolerance, an iteration cap and
+[`BPDiagnostics`](@ref). VE/JT posterior entry points reject globally zero mass,
+including disconnected components and all-observed cases. BP detects local
+zero-support failures but otherwise leaves global feasibility unknown unless
+`BeliefPropagation(check_evidence=true)` requests a VE feasibility pass.
+`evidence_checked` records that choice. Its residual is measured before damping
+in the message equations at the returned iterate, not from a tiny damped step,
+and is not a general bound on marginal error.
+
+## Exact finite-model proofs
+
+The sibling BayesianNetworks Lean project proves evidence clamping equivalent
+to indicator-factor elimination, normalized VE posterior correctness, actual
+cached Shafer-Shenoy collect/distribute computation, and d-separation soundness
+for the moralized ancestral graph. Tree validity requires structural running
+intersection, complete factor assignment and variable coverage, not a
+precomputed correct message trace. Grafting covers arbitrary branching and
+empty-separator virtual roots cover disconnected forests.
+
+These are not proofs of Julia arrays, CliqueTrees construction or iterative BP.
+Formal forest beliefs include outside-component scalar masses; Julia stores
+component-local beliefs and separately checks global mass before normalization.
+Likewise, the empty `infer` query is an unnormalized mass API, not the formal
+empty-query probability distribution. Numerical error bounds require an
+explicit positive evidence-mass floor and error budget.
+
+`BayesianNetworks.proof_certificate` captures the original ordered records,
+references and exact bound numbers for the separate literal-Lean checker,
+before this package's Float64 conversion. See the
+[finite-model certificate guide](https://ecorecipes.github.io/BayesianNetworks.jl/certificates/).
 
 ## Validation and sensitivity
 

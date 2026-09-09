@@ -217,7 +217,8 @@ A [`CompiledJunctionTree`](@ref) after [`calibrate`](@ref): `beliefs[i]` is the
 unnormalised clique belief (its scope is `cliques[i]` minus the evidence
 variables, in some order), `potentials[i]` the product of the conditioned
 factors assigned to clique `i`, `evidence` the evidence used,
-`evidence_probability` the total mass `P(evidence)` (one when there is none),
+`evidence_probability` the global partition mass after conditioning (equal to
+`P(evidence)` when the original factors form a normalized joint),
 and `n_messages` the number of separator messages passed.
 """
 struct CalibratedJunctionTree{T<:Real}
@@ -248,7 +249,9 @@ clique; messages are then passed from the leaves to the roots (collect) and
 back (distribute), the message from clique `i` to neighbour `j` being the
 product of `i`'s potential with the messages from its other neighbours,
 summed down to the separator. The belief of a clique is its potential times
-all incoming messages, and equals `P(clique, evidence)`. There is no
+all incoming messages, and equals the unnormalized marginal of that connected component. For a connected
+graph this is `P(clique, evidence)`; in a forest, `evidence_probability` multiplies
+the component masses and posterior entry points check that global mass. There is no
 separator division, so factors with zero entries (deterministic mechanisms)
 need no special treatment -- unlike the division-based architectures of
 [LauritzenSpiegelhalter1988](@cite) and its Hugin refinement
@@ -368,7 +371,7 @@ function _containing_clique(jt::CompiledJunctionTree, axes, query)
     return best == 0 ? nothing : best
 end
 
-# The marginal of `query` (all in the scope of `belief`) as a normalised factor.
+# Callers check the global mass before reading a single component's posterior.
 function _belief_marginal(belief::Factor, query)
     return normalize(reorder(_project(belief, collect(Symbol, query)), query))
 end
@@ -390,6 +393,7 @@ function _infer(backend::JunctionTree, fg::FactorGraph{T}, query, evidence) wher
                                        true)
     end
     cal = calibrate(fg, jt; evidence)
+    _require_evidence_mass(cal.evidence_probability, evidence)
     return _belief_marginal(cal.beliefs[c], query), _diagnostics(cal, c)
 end
 
@@ -407,6 +411,7 @@ function clique_beliefs(fg::FactorGraph;
                         evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
                         backend::JunctionTree=JunctionTree())
     cal = calibrate(fg, build_junction_tree(fg; order=backend.order); evidence)
+    _require_evidence_mass(cal.evidence_probability, evidence)
     return map(normalize, cal.beliefs)
 end
 
@@ -434,10 +439,12 @@ end
 function _all_marginals(backend::JunctionTree, fg::FactorGraph{T}, evidence) where {T}
     jt = build_junction_tree(fg; order=backend.order)
     cal = calibrate(fg, jt; evidence)
-    out = Dict{Symbol,Factor{T}}()
+    _require_evidence_mass(cal.evidence_probability, evidence)
+    R = _division_type(T)
+    out = Dict{Symbol,Factor{R}}()
     for (v, ax) in fg.axes
         if haskey(evidence, v)
-            out[v] = _point_mass(T, ax, evidence[v])
+            out[v] = _point_mass(R, ax, evidence[v])
         else
             out[v] = _belief_marginal(cal.beliefs[jt.home[v]], [v])
         end
@@ -447,10 +454,15 @@ end
 
 function _all_marginals(backend::VariableElimination, fg::FactorGraph{T},
                         evidence) where {T}
-    out = Dict{Symbol,Factor{T}}()
+    if all(v -> haskey(evidence, v), keys(fg.axes))
+        mass = variable_elimination(fg, Symbol[]; evidence, order=backend.order)[1].table[]
+        _require_evidence_mass(mass, evidence)
+    end
+    R = _division_type(T)
+    out = Dict{Symbol,Factor{R}}()
     for (v, ax) in fg.axes
         if haskey(evidence, v)
-            out[v] = _point_mass(T, ax, evidence[v])
+            out[v] = _point_mass(R, ax, evidence[v])
         else
             out[v] = variable_elimination(fg, [v]; evidence, order=backend.order)[1]
         end

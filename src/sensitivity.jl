@@ -52,8 +52,9 @@ function entropy(fg::FactorGraph, x::Symbol; kwargs...)
     return entropy(fg, [x]; kwargs...)
 end
 function entropy(m::BayesModel, x::AbstractVector{Symbol}; evidence=Dict{Symbol,Symbol}(),
-                 kwargs...)
-    return entropy(compile(m), x; evidence=_model_evidence(m, evidence), kwargs...)
+                 atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
+    return entropy(compile(m; atol=atol), x; evidence=_model_evidence(m, evidence),
+                   kwargs...)
 end
 entropy(m::BayesModel, x::Symbol; kwargs...) = entropy(m, [x]; kwargs...)
 
@@ -96,8 +97,10 @@ function mutual_information(fg::FactorGraph, x::Symbol, y::Symbol;
     return max(total / log(base), 0.0)
 end
 function mutual_information(m::BayesModel, x::Symbol, y::Symbol;
-                            evidence=Dict{Symbol,Symbol}(), kwargs...)
-    return mutual_information(compile(m), x, y; evidence=_model_evidence(m, evidence),
+                            evidence=Dict{Symbol,Symbol}(),
+                            atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
+    return mutual_information(compile(m; atol=atol), x, y;
+                              evidence=_model_evidence(m, evidence),
                               kwargs...)
 end
 
@@ -152,8 +155,9 @@ function sensitivity(fg::FactorGraph, target::Symbol;
     return sort!(collect(rows); by=r -> (-r.mutual_information, r.variable))
 end
 function sensitivity(m::BayesModel, target::Symbol; evidence=Dict{Symbol,Symbol}(),
-                     kwargs...)
-    return sensitivity(compile(m), target; evidence=_model_evidence(m, evidence), kwargs...)
+                     atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
+    return sensitivity(compile(m; atol=atol), target; evidence=_model_evidence(m, evidence),
+                       kwargs...)
 end
 
 """
@@ -213,7 +217,9 @@ function tornado(fg::FactorGraph, target::Symbol, state::Symbol;
     return sort!(rows; by=r -> (-r.range, r.variable))
 end
 function tornado(m::BayesModel, target::Symbol, state::Symbol;
-                 evidence=Dict{Symbol,Symbol}(), kwargs...)
-    return tornado(compile(m), target, state; evidence=_model_evidence(m, evidence),
+                 evidence=Dict{Symbol,Symbol}(), atol::Real=BayesianNetworks.DEFAULT_ATOL,
+                 kwargs...)
+    return tornado(compile(m; atol=atol), target, state;
+                   evidence=_model_evidence(m, evidence),
                    kwargs...)
 end

@@ -2232,7 +2232,11 @@ vertical-align: -.125em;
   <li><a href="#the-junction-tree-of-asia" id="toc-the-junction-tree-of-asia" class="nav-link" data-scroll-target="#the-junction-tree-of-asia">The junction tree of asia</a></li>
   <li><a href="#calibration-and-all-marginals" id="toc-calibration-and-all-marginals" class="nav-link" data-scroll-target="#calibration-and-all-marginals">Calibration and all marginals</a></li>
   <li><a href="#belief-propagation-on-a-tree" id="toc-belief-propagation-on-a-tree" class="nav-link" data-scroll-target="#belief-propagation-on-a-tree">Belief propagation on a tree</a></li>
-  <li><a href="#loopy-belief-propagation-on-asia" id="toc-loopy-belief-propagation-on-asia" class="nav-link" data-scroll-target="#loopy-belief-propagation-on-asia">Loopy belief propagation on asia</a></li>
+  <li><a href="#loopy-belief-propagation-on-asia" id="toc-loopy-belief-propagation-on-asia" class="nav-link" data-scroll-target="#loopy-belief-propagation-on-asia">Loopy belief propagation on asia</a>
+  <ul class="collapse">
+  <li><a href="#slow-updates-are-not-convergence" id="toc-slow-updates-are-not-convergence" class="nav-link" data-scroll-target="#slow-updates-are-not-convergence">Slow updates are not convergence</a></li>
+  <li><a href="#unknown-feasibility-on-a-loop" id="toc-unknown-feasibility-on-a-loop" class="nav-link" data-scroll-target="#unknown-feasibility-on-a-loop">Unknown feasibility on a loop</a></li>
+  </ul></li>
   <li><a href="#timing-all-marginals-by-junction-tree-versus-variable-elimination" id="toc-timing-all-marginals-by-junction-tree-versus-variable-elimination" class="nav-link" data-scroll-target="#timing-all-marginals-by-junction-tree-versus-variable-elimination">Timing: all marginals by junction tree versus variable elimination</a></li>
   <li><a href="#summary" id="toc-summary" class="nav-link" data-scroll-target="#summary">Summary</a></li>
   <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
@@ -2427,7 +2431,7 @@ vertical-align: -.125em;
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a>bp_marginals, bp_diag <span class="op">=</span> <span class="fu">belief_propagation</span>(habitat; evidence<span class="op">=</span><span class="fu">Dict</span>(<span class="op">:</span>Vegetation <span class="op">=&gt;</span> <span class="op">:</span>dense))</span>
 <span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>bp_diag</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>BPDiagnostics(4, true, 0.0, true)</code></pre>
+<pre><code>BPDiagnostics(3, true, 0.0, true, false)</code></pre>
 </div>
 </div>
 <div id="32" class="cell" data-execution_count="1">
@@ -2445,7 +2449,7 @@ vertical-align: -.125em;
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>loopy, loopy_diag <span class="op">=</span> <span class="fu">belief_propagation</span>(fg)</span>
 <span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>loopy_diag</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>BPDiagnostics(5, true, 1.3877787807814457e-17, false)</code></pre>
+<pre><code>BPDiagnostics(4, true, 1.3877787807814457e-17, false, false)</code></pre>
 </div>
 </div>
 <div id="36" class="cell" data-execution_count="1">
@@ -2474,20 +2478,20 @@ vertical-align: -.125em;
 <span id="cb36-6"><a href="#cb36-6" aria-hidden="true" tabindex="-1"></a>             dysp<span class="op">=</span><span class="fu">round</span>(ms[<span class="op">:</span>dysp].table[<span class="fl">1</span>]; digits<span class="op">=</span><span class="fl">6</span>)))</span>
 <span id="cb36-7"><a href="#cb36-7" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>(damping = 0.0, schedule = :flooding, iterations = 5, converged = true, residual = 1.39e-17, dysp = 0.43931)
-(damping = 0.5, schedule = :flooding, iterations = 36, converged = true, residual = 8.35e-9, dysp = 0.439311)
-(damping = 0.0, schedule = :sequential, iterations = 2, converged = true, residual = 0.0, dysp = 0.43931)</code></pre>
+<pre><code>(damping = 0.0, schedule = :flooding, iterations = 4, converged = true, residual = 1.39e-17, dysp = 0.43931)
+(damping = 0.5, schedule = :flooding, iterations = 36, converged = true, residual = 8.9e-9, dysp = 0.439311)
+(damping = 0.0, schedule = :sequential, iterations = 1, converged = true, residual = 0.0, dysp = 0.43931)</code></pre>
 </div>
 </div>
-<p>Evidence that cuts every loop makes the conditioned graph a tree again, and the diagnostics report <code>tree = true</code>, so the fixed point of the message equations is the exact marginal (the field is named <code>tree</code> rather than <code>exact</code> because the returned iterate differs from that fixed point by about <code>max_residual</code>, which under damping is the tolerance rather than machine precision):</p>
+<p>Evidence that cuts every loop makes the conditioned graph a tree again, and the diagnostics report <code>tree = true</code>, so the fixed point of the message equations is the exact marginal (the field is named <code>tree</code> rather than <code>exact</code> because the returned <code>max_residual</code> measures the undamped message equations at the returned iterate, not a general bound on marginal error):</p>
 <div id="40" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a>_, cut_diag <span class="op">=</span> <span class="fu">belief_propagation</span>(fg; evidence<span class="op">=</span><span class="fu">Dict</span>(<span class="op">:</span>either <span class="op">=&gt;</span> <span class="op">:</span>no))</span>
 <span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a>cut_diag</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>BPDiagnostics(5, true, 0.0, true)</code></pre>
+<pre><code>BPDiagnostics(4, true, 0.0, true, false)</code></pre>
 </div>
 </div>
-<p>Evidence of probability zero is an error in all three backends: variable elimination and the junction tree fail to normalise, and belief propagation raises the same <code>KernelNormalizationError</code> rather than returning a normalised belief with <code>converged = true</code>.</p>
+<p>VE and JT check global feasibility before returning a posterior, even for an unrelated component or an all-observed query. BP detects some zero-support cases, including the following one, but local messages are not a general global feasibility test.</p>
 <div id="42" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb40-1"><a href="#cb40-1" aria-hidden="true" tabindex="-1"></a><span class="cf">try</span></span>
 <span id="cb40-2"><a href="#cb40-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">belief_propagation</span>(fg; evidence<span class="op">=</span><span class="fu">Dict</span>(<span class="op">:</span>lung <span class="op">=&gt;</span> <span class="op">:</span>yes, <span class="op">:</span>either <span class="op">=&gt;</span> <span class="op">:</span>no))</span>
@@ -2498,49 +2502,97 @@ vertical-align: -.125em;
 <pre><code>KernelNormalizationError</code></pre>
 </div>
 </div>
+<section id="slow-updates-are-not-convergence" class="level3">
+<h3 class="anchored" data-anchor-id="slow-updates-are-not-convergence">Slow updates are not convergence</h3>
+<p>With damping close to one, a tiny update can coexist with a large error. The diagnostic now measures the undamped residual at the returned iterate:</p>
+<div id="44" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a>coin <span class="op">=</span> <span class="fu">FactorGraph</span>([<span class="fu">Factor</span>(<span class="fu">FiniteAxis</span>(<span class="op">:</span>Coin, [<span class="op">:</span>heads, <span class="op">:</span>tails]), [<span class="fl">0.9</span>, <span class="fl">0.1</span>])])</span>
+<span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a>slow, slow_diag <span class="op">=</span> <span class="fu">infer</span>(coin, <span class="op">:</span>Coin; backend <span class="op">=</span> <span class="fu">BeliefPropagation</span>(damping <span class="op">=</span> <span class="fl">1</span> <span class="op">-</span> <span class="fl">1e-9</span>))</span>
+<span id="cb42-3"><a href="#cb42-3" aria-hidden="true" tabindex="-1"></a>(belief <span class="op">=</span> slow.table, converged <span class="op">=</span> slow_diag.converged,</span>
+<span id="cb42-4"><a href="#cb42-4" aria-hidden="true" tabindex="-1"></a> residual <span class="op">=</span> slow_diag.max_residual, oracle <span class="op">=</span> <span class="fu">infer</span>(coin, <span class="op">:</span>Coin)[<span class="fl">1</span>].table)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="1">
+<pre><code>(belief = [0.5000000799999865, 0.49999992000001353], converged = false, residual = 0.3999999200000154, oracle = [0.9, 0.1])</code></pre>
+</div>
+</div>
+<p>The iteration cap is reached without convergence; the near-uniform belief is not certified as accurate merely because its damped steps are small.</p>
+</section>
+<section id="unknown-feasibility-on-a-loop" class="level3">
+<h3 class="anchored" data-anchor-id="unknown-feasibility-on-a-loop">Unknown feasibility on a loop</h3>
+<p>Three pairwise constraints can each have support while being jointly inconsistent. Here <code>A=B</code> and <code>B=C</code> conflict with <code>A!=C</code>:</p>
+<div id="46" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a><span class="fu">binary</span>(v) <span class="op">=</span> <span class="fu">FiniteAxis</span>(v, [<span class="op">:</span>no, <span class="op">:</span>yes])</span>
+<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a>inconsistent <span class="op">=</span> <span class="fu">FactorGraph</span>([<span class="fu">Factor</span>([<span class="fu">binary</span>(<span class="op">:</span>A), <span class="fu">binary</span>(<span class="op">:</span>B)], [<span class="fl">1.0</span> <span class="fl">0.0</span>; <span class="fl">0.0</span> <span class="fl">1.0</span>]),</span>
+<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a>                            <span class="fu">Factor</span>([<span class="fu">binary</span>(<span class="op">:</span>B), <span class="fu">binary</span>(<span class="op">:</span>C)], [<span class="fl">1.0</span> <span class="fl">0.0</span>; <span class="fl">0.0</span> <span class="fl">1.0</span>]),</span>
+<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a>                            <span class="fu">Factor</span>([<span class="fu">binary</span>(<span class="op">:</span>A), <span class="fu">binary</span>(<span class="op">:</span>C)], [<span class="fl">0.0</span> <span class="fl">1.0</span>; <span class="fl">1.0</span> <span class="fl">0.0</span>])])</span>
+<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a>_, unchecked <span class="op">=</span> <span class="fu">infer</span>(inconsistent, <span class="op">:</span>A; backend <span class="op">=</span> <span class="fu">BeliefPropagation</span>())</span>
+<span id="cb44-6"><a href="#cb44-6" aria-hidden="true" tabindex="-1"></a>(converged <span class="op">=</span> unchecked.converged, evidence_checked <span class="op">=</span> unchecked.evidence_checked)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="1">
+<pre><code>(converged = true, evidence_checked = false)</code></pre>
+</div>
+</div>
+<div id="48" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb46"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb46-1"><a href="#cb46-1" aria-hidden="true" tabindex="-1"></a><span class="cf">try</span></span>
+<span id="cb46-2"><a href="#cb46-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">infer</span>(inconsistent, <span class="op">:</span>A; backend <span class="op">=</span> <span class="fu">BeliefPropagation</span>(check_evidence <span class="op">=</span> <span class="cn">true</span>))</span>
+<span id="cb46-3"><a href="#cb46-3" aria-hidden="true" tabindex="-1"></a><span class="cf">catch</span> <span class="cn">e</span></span>
+<span id="cb46-4"><a href="#cb46-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">typeof</span>(<span class="cn">e</span>)</span>
+<span id="cb46-5"><a href="#cb46-5" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="1">
+<pre><code>KernelNormalizationError</code></pre>
+</div>
+</div>
+<p>The optional exact VE pass detects the contradiction. Its potentially exponential cost is explicit: it is not silently imposed on every loopy-BP run.</p>
+</section>
 </section>
 <section id="timing-all-marginals-by-junction-tree-versus-variable-elimination" class="level2">
 <h2 class="anchored" data-anchor-id="timing-all-marginals-by-junction-tree-versus-variable-elimination">Timing: all marginals by junction tree versus variable elimination</h2>
 <p>A random network with 60 binary variables (up to three parents among the previous eight) shows where the junction tree pays off: variable elimination repeats the elimination once per variable, the junction tree calibrates once.</p>
-<div id="44" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb42-1"><a href="#cb42-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ax</span>(v) <span class="op">=</span> <span class="fu">FiniteAxis</span>(v, [<span class="op">:</span>a, <span class="op">:</span>b])</span>
-<span id="cb42-2"><a href="#cb42-2" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> <span class="fu">random_network</span>(rng, n; window<span class="op">=</span><span class="fl">8</span>, maxparents<span class="op">=</span><span class="fl">3</span>)</span>
-<span id="cb42-3"><a href="#cb42-3" aria-hidden="true" tabindex="-1"></a>    kernels <span class="op">=</span> <span class="dt">Pair</span>{<span class="dt">Symbol</span>,FiniteKernel}[]</span>
-<span id="cb42-4"><a href="#cb42-4" aria-hidden="true" tabindex="-1"></a>    parents <span class="op">=</span> <span class="fu">Dict</span><span class="dt">{Symbol,Vector{Symbol}}</span>()</span>
-<span id="cb42-5"><a href="#cb42-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span>n</span>
-<span id="cb42-6"><a href="#cb42-6" aria-hidden="true" tabindex="-1"></a>        v <span class="op">=</span> <span class="fu">Symbol</span>(<span class="op">:</span>X, i)</span>
-<span id="cb42-7"><a href="#cb42-7" aria-hidden="true" tabindex="-1"></a>        cands <span class="op">=</span> [<span class="fu">Symbol</span>(<span class="op">:</span>X, j) for j <span class="kw">in</span> <span class="fu">max</span>(<span class="fl">1</span>, i <span class="op">-</span> window)<span class="op">:</span>(i <span class="op">-</span> <span class="fl">1</span>)]</span>
-<span id="cb42-8"><a href="#cb42-8" aria-hidden="true" tabindex="-1"></a>        ps <span class="op">=</span> <span class="fu">shuffle</span>(rng, cands)[<span class="fl">1</span><span class="op">:</span><span class="fu">min</span>(<span class="fu">rand</span>(rng, <span class="fl">0</span><span class="op">:</span>maxparents), <span class="fu">length</span>(cands))]</span>
-<span id="cb42-9"><a href="#cb42-9" aria-hidden="true" tabindex="-1"></a>        parents[v] <span class="op">=</span> ps</span>
-<span id="cb42-10"><a href="#cb42-10" aria-hidden="true" tabindex="-1"></a>        dom <span class="op">=</span> <span class="fu">FiniteSpace</span>(FiniteAxis[<span class="fu">ax</span>(p) for p <span class="kw">in</span> ps])</span>
-<span id="cb42-11"><a href="#cb42-11" aria-hidden="true" tabindex="-1"></a>        <span class="fu">push!</span>(kernels, v <span class="op">=&gt;</span> <span class="fu">random_kernel</span>(rng, dom, <span class="fu">FiniteSpace</span>(<span class="fu">ax</span>(v))))</span>
-<span id="cb42-12"><a href="#cb42-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">end</span></span>
-<span id="cb42-13"><a href="#cb42-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> kernels, parents</span>
-<span id="cb42-14"><a href="#cb42-14" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
-<span id="cb42-15"><a href="#cb42-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb42-16"><a href="#cb42-16" aria-hidden="true" tabindex="-1"></a>kernels, parents <span class="op">=</span> <span class="fu">random_network</span>(<span class="fu">MersenneTwister</span>(<span class="fl">2026</span>), <span class="fl">60</span>)</span>
-<span id="cb42-17"><a href="#cb42-17" aria-hidden="true" tabindex="-1"></a>big <span class="op">=</span> <span class="fu">FactorGraph</span>([<span class="fu">Factor</span>(k, parents[v], v) for (v, k) <span class="kw">in</span> kernels])</span>
-<span id="cb42-18"><a href="#cb42-18" aria-hidden="true" tabindex="-1"></a>big_ev <span class="op">=</span> <span class="fu">Dict</span>(<span class="op">:</span>X60 <span class="op">=&gt;</span> <span class="op">:</span>a, <span class="op">:</span>X31 <span class="op">=&gt;</span> <span class="op">:</span>b)</span>
-<span id="cb42-19"><a href="#cb42-19" aria-hidden="true" tabindex="-1"></a>(treewidth<span class="op">=</span><span class="fu">build_junction_tree</span>(big).treewidth, n_cliques<span class="op">=</span><span class="fu">length</span>(<span class="fu">build_junction_tree</span>(big)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="50" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb48"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb48-1"><a href="#cb48-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ax</span>(v) <span class="op">=</span> <span class="fu">FiniteAxis</span>(v, [<span class="op">:</span>a, <span class="op">:</span>b])</span>
+<span id="cb48-2"><a href="#cb48-2" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> <span class="fu">random_network</span>(rng, n; window<span class="op">=</span><span class="fl">8</span>, maxparents<span class="op">=</span><span class="fl">3</span>)</span>
+<span id="cb48-3"><a href="#cb48-3" aria-hidden="true" tabindex="-1"></a>    kernels <span class="op">=</span> <span class="dt">Pair</span>{<span class="dt">Symbol</span>,FiniteKernel}[]</span>
+<span id="cb48-4"><a href="#cb48-4" aria-hidden="true" tabindex="-1"></a>    parents <span class="op">=</span> <span class="fu">Dict</span><span class="dt">{Symbol,Vector{Symbol}}</span>()</span>
+<span id="cb48-5"><a href="#cb48-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> i <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span>n</span>
+<span id="cb48-6"><a href="#cb48-6" aria-hidden="true" tabindex="-1"></a>        v <span class="op">=</span> <span class="fu">Symbol</span>(<span class="op">:</span>X, i)</span>
+<span id="cb48-7"><a href="#cb48-7" aria-hidden="true" tabindex="-1"></a>        cands <span class="op">=</span> [<span class="fu">Symbol</span>(<span class="op">:</span>X, j) for j <span class="kw">in</span> <span class="fu">max</span>(<span class="fl">1</span>, i <span class="op">-</span> window)<span class="op">:</span>(i <span class="op">-</span> <span class="fl">1</span>)]</span>
+<span id="cb48-8"><a href="#cb48-8" aria-hidden="true" tabindex="-1"></a>        ps <span class="op">=</span> <span class="fu">shuffle</span>(rng, cands)[<span class="fl">1</span><span class="op">:</span><span class="fu">min</span>(<span class="fu">rand</span>(rng, <span class="fl">0</span><span class="op">:</span>maxparents), <span class="fu">length</span>(cands))]</span>
+<span id="cb48-9"><a href="#cb48-9" aria-hidden="true" tabindex="-1"></a>        parents[v] <span class="op">=</span> ps</span>
+<span id="cb48-10"><a href="#cb48-10" aria-hidden="true" tabindex="-1"></a>        dom <span class="op">=</span> <span class="fu">FiniteSpace</span>(FiniteAxis[<span class="fu">ax</span>(p) for p <span class="kw">in</span> ps])</span>
+<span id="cb48-11"><a href="#cb48-11" aria-hidden="true" tabindex="-1"></a>        <span class="fu">push!</span>(kernels, v <span class="op">=&gt;</span> <span class="fu">random_kernel</span>(rng, dom, <span class="fu">FiniteSpace</span>(<span class="fu">ax</span>(v))))</span>
+<span id="cb48-12"><a href="#cb48-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">end</span></span>
+<span id="cb48-13"><a href="#cb48-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> kernels, parents</span>
+<span id="cb48-14"><a href="#cb48-14" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
+<span id="cb48-15"><a href="#cb48-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb48-16"><a href="#cb48-16" aria-hidden="true" tabindex="-1"></a>kernels, parents <span class="op">=</span> <span class="fu">random_network</span>(<span class="fu">MersenneTwister</span>(<span class="fl">2026</span>), <span class="fl">60</span>)</span>
+<span id="cb48-17"><a href="#cb48-17" aria-hidden="true" tabindex="-1"></a>big <span class="op">=</span> <span class="fu">FactorGraph</span>([<span class="fu">Factor</span>(k, parents[v], v) for (v, k) <span class="kw">in</span> kernels])</span>
+<span id="cb48-18"><a href="#cb48-18" aria-hidden="true" tabindex="-1"></a>big_ev <span class="op">=</span> <span class="fu">Dict</span>(<span class="op">:</span>X60 <span class="op">=&gt;</span> <span class="op">:</span>a, <span class="op">:</span>X31 <span class="op">=&gt;</span> <span class="op">:</span>b)</span>
+<span id="cb48-19"><a href="#cb48-19" aria-hidden="true" tabindex="-1"></a>(treewidth<span class="op">=</span><span class="fu">build_junction_tree</span>(big).treewidth, n_cliques<span class="op">=</span><span class="fu">length</span>(<span class="fu">build_junction_tree</span>(big)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>(treewidth = 4, n_cliques = 48)</code></pre>
 </div>
 </div>
-<div id="46" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>rows <span class="op">=</span> <span class="fu">map</span>((<span class="fu">JunctionTree</span>(), <span class="fu">VariableElimination</span>(), <span class="fu">BeliefPropagation</span>())) <span class="cf">do</span> backend</span>
-<span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">all_marginals</span>(big; evidence<span class="op">=</span>big_ev, backend)          <span class="co"># warm up compilation</span></span>
-<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a>    t <span class="op">=</span> <span class="pp">@elapsed</span> ms <span class="op">=</span> <span class="fu">all_marginals</span>(big; evidence<span class="op">=</span>big_ev, backend)</span>
-<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a>    reference <span class="op">=</span> <span class="fu">all_marginals</span>(big; evidence<span class="op">=</span>big_ev, backend<span class="op">=</span><span class="fu">VariableElimination</span>())</span>
-<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a>    err <span class="op">=</span> <span class="fu">maximum</span>(<span class="fu">maximum</span>(<span class="fu">abs</span>.(ms[v].table <span class="op">.-</span> reference[v].table)) <span class="cf">for</span> v <span class="kw">in</span> <span class="fu">variables</span>(big))</span>
-<span id="cb44-6"><a href="#cb44-6" aria-hidden="true" tabindex="-1"></a>    (backend<span class="op">=</span><span class="fu">nameof</span>(<span class="fu">typeof</span>(backend)), seconds<span class="op">=</span><span class="fu">round</span>(t; digits<span class="op">=</span><span class="fl">4</span>), max_error<span class="op">=</span><span class="fu">round</span>(err; sigdigits<span class="op">=</span><span class="fl">3</span>))</span>
-<span id="cb44-7"><a href="#cb44-7" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span>
-<span id="cb44-8"><a href="#cb44-8" aria-hidden="true" tabindex="-1"></a><span class="fu">foreach</span>(println, rows)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div id="52" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb50"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb50-1"><a href="#cb50-1" aria-hidden="true" tabindex="-1"></a>rows <span class="op">=</span> <span class="fu">map</span>((<span class="fu">JunctionTree</span>(), <span class="fu">VariableElimination</span>(), <span class="fu">BeliefPropagation</span>())) <span class="cf">do</span> backend</span>
+<span id="cb50-2"><a href="#cb50-2" aria-hidden="true" tabindex="-1"></a>    <span class="fu">all_marginals</span>(big; evidence<span class="op">=</span>big_ev, backend)          <span class="co"># warm up compilation</span></span>
+<span id="cb50-3"><a href="#cb50-3" aria-hidden="true" tabindex="-1"></a>    times <span class="op">=</span> [<span class="pp">@elapsed</span> <span class="fu">all_marginals</span>(big; evidence<span class="op">=</span>big_ev, backend) for _ <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="fl">3</span>]</span>
+<span id="cb50-4"><a href="#cb50-4" aria-hidden="true" tabindex="-1"></a>    t <span class="op">=</span> <span class="fu">minimum</span>(times)</span>
+<span id="cb50-5"><a href="#cb50-5" aria-hidden="true" tabindex="-1"></a>    ms <span class="op">=</span> <span class="fu">all_marginals</span>(big; evidence<span class="op">=</span>big_ev, backend)</span>
+<span id="cb50-6"><a href="#cb50-6" aria-hidden="true" tabindex="-1"></a>    reference <span class="op">=</span> <span class="fu">all_marginals</span>(big; evidence<span class="op">=</span>big_ev, backend<span class="op">=</span><span class="fu">VariableElimination</span>())</span>
+<span id="cb50-7"><a href="#cb50-7" aria-hidden="true" tabindex="-1"></a>    err <span class="op">=</span> <span class="fu">maximum</span>(<span class="fu">maximum</span>(<span class="fu">abs</span>.(ms[v].table <span class="op">.-</span> reference[v].table)) <span class="cf">for</span> v <span class="kw">in</span> <span class="fu">variables</span>(big))</span>
+<span id="cb50-8"><a href="#cb50-8" aria-hidden="true" tabindex="-1"></a>    (backend<span class="op">=</span><span class="fu">nameof</span>(<span class="fu">typeof</span>(backend)), seconds<span class="op">=</span><span class="fu">round</span>(t; digits<span class="op">=</span><span class="fl">4</span>), max_error<span class="op">=</span><span class="fu">round</span>(err; sigdigits<span class="op">=</span><span class="fl">3</span>))</span>
+<span id="cb50-9"><a href="#cb50-9" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span>
+<span id="cb50-10"><a href="#cb50-10" aria-hidden="true" tabindex="-1"></a><span class="fu">foreach</span>(println, rows)</span>
+<span id="cb50-11"><a href="#cb50-11" aria-hidden="true" tabindex="-1"></a>(julia <span class="op">=</span> <span class="fu">string</span>(<span class="cn">VERSION</span>), cpu <span class="op">=</span> <span class="bu">Sys</span>.CPU_NAME, threads <span class="op">=</span> <span class="bu">Threads</span>.<span class="fu">nthreads</span>(),</span>
+<span id="cb50-12"><a href="#cb50-12" aria-hidden="true" tabindex="-1"></a> repetitions <span class="op">=</span> <span class="fl">3</span>, statistic <span class="op">=</span> <span class="st">&quot;minimum after warm-up&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>(backend = :JunctionTree, seconds = 0.001, max_error = 2.22e-16)
-(backend = :VariableElimination, seconds = 0.0378, max_error = 0.0)
-(backend = :BeliefPropagation, seconds = 0.0059, max_error = 0.0521)</code></pre>
+<pre><code>(backend = :JunctionTree, seconds = 0.0012, max_error = 2.22e-16)
+(backend = :VariableElimination, seconds = 0.0234, max_error = 0.0)
+(backend = :BeliefPropagation, seconds = 0.0108, max_error = 0.0521)</code></pre>
+</div>
+<div class="cell-output cell-output-display" data-execution_count="1">
+<pre><code>(julia = &quot;1.12.7&quot;, cpu = &quot;apple-m1&quot;, threads = 1, repetitions = 3, statistic = &quot;minimum after warm-up&quot;)</code></pre>
 </div>
 </div>
+<p>These timings describe this run, not a portable performance guarantee.</p>
 <p>The junction tree gives the exact answers of variable elimination at a fraction of its cost (one calibration instead of one elimination per variable), and the gap widens with the number of variables. Loopy belief propagation is cheap too, but on this loopy graph its marginals are off by several percent; it is the backend for graphs too dense to triangulate, not a substitute for the junction tree when the treewidth is small.</p>
 </section>
 <section id="summary" class="level2">

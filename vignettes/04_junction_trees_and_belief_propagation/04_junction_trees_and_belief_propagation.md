@@ -7,6 +7,9 @@ Simon Frost
 - [Calibration and all marginals](#calibration-and-all-marginals)
 - [Belief propagation on a tree](#belief-propagation-on-a-tree)
 - [Loopy belief propagation on asia](#loopy-belief-propagation-on-asia)
+  - [Slow updates are not
+    convergence](#slow-updates-are-not-convergence)
+  - [Unknown feasibility on a loop](#unknown-feasibility-on-a-loop)
 - [Timing: all marginals by junction tree versus variable
   elimination](#timing-all-marginals-by-junction-tree-versus-variable-elimination)
 - [Summary](#summary)
@@ -210,7 +213,7 @@ bp_marginals, bp_diag = belief_propagation(habitat; evidence=Dict(:Vegetation =>
 bp_diag
 ```
 
-    BPDiagnostics(4, true, 0.0, true)
+    BPDiagnostics(3, true, 0.0, true, false)
 
 ``` julia
 ve = all_marginals(habitat; evidence=Dict(:Vegetation => :dense), backend=VariableElimination())
@@ -230,7 +233,7 @@ loopy, loopy_diag = belief_propagation(fg)
 loopy_diag
 ```
 
-    BPDiagnostics(5, true, 1.3877787807814457e-17, false)
+    BPDiagnostics(4, true, 1.3877787807814457e-17, false, false)
 
 ``` julia
 exact = all_marginals(fg)
@@ -261,28 +264,28 @@ for backend in (BeliefPropagation(), BeliefPropagation(; damping=0.5),
 end
 ```
 
-    (damping = 0.0, schedule = :flooding, iterations = 5, converged = true, residual = 1.39e-17, dysp = 0.43931)
-    (damping = 0.5, schedule = :flooding, iterations = 36, converged = true, residual = 8.35e-9, dysp = 0.439311)
-    (damping = 0.0, schedule = :sequential, iterations = 2, converged = true, residual = 0.0, dysp = 0.43931)
+    (damping = 0.0, schedule = :flooding, iterations = 4, converged = true, residual = 1.39e-17, dysp = 0.43931)
+    (damping = 0.5, schedule = :flooding, iterations = 36, converged = true, residual = 8.9e-9, dysp = 0.439311)
+    (damping = 0.0, schedule = :sequential, iterations = 1, converged = true, residual = 0.0, dysp = 0.43931)
 
 Evidence that cuts every loop makes the conditioned graph a tree again,
 and the diagnostics report `tree = true`, so the fixed point of the
 message equations is the exact marginal (the field is named `tree`
-rather than `exact` because the returned iterate differs from that fixed
-point by about `max_residual`, which under damping is the tolerance
-rather than machine precision):
+rather than `exact` because the returned `max_residual` measures the
+undamped message equations at the returned iterate, not a general bound
+on marginal error):
 
 ``` julia
 _, cut_diag = belief_propagation(fg; evidence=Dict(:either => :no))
 cut_diag
 ```
 
-    BPDiagnostics(5, true, 0.0, true)
+    BPDiagnostics(4, true, 0.0, true, false)
 
-Evidence of probability zero is an error in all three backends: variable
-elimination and the junction tree fail to normalise, and belief
-propagation raises the same `KernelNormalizationError` rather than
-returning a normalised belief with `converged = true`.
+VE and JT check global feasibility before returning a posterior, even
+for an unrelated component or an all-observed query. BP detects some
+zero-support cases, including the following one, but local messages are
+not a general global feasibility test.
 
 ``` julia
 try
@@ -293,6 +296,55 @@ end
 ```
 
     KernelNormalizationError
+
+### Slow updates are not convergence
+
+With damping close to one, a tiny update can coexist with a large error.
+The diagnostic now measures the undamped residual at the returned
+iterate:
+
+``` julia
+coin = FactorGraph([Factor(FiniteAxis(:Coin, [:heads, :tails]), [0.9, 0.1])])
+slow, slow_diag = infer(coin, :Coin; backend = BeliefPropagation(damping = 1 - 1e-9))
+(belief = slow.table, converged = slow_diag.converged,
+ residual = slow_diag.max_residual, oracle = infer(coin, :Coin)[1].table)
+```
+
+    (belief = [0.5000000799999865, 0.49999992000001353], converged = false, residual = 0.3999999200000154, oracle = [0.9, 0.1])
+
+The iteration cap is reached without convergence; the near-uniform
+belief is not certified as accurate merely because its damped steps are
+small.
+
+### Unknown feasibility on a loop
+
+Three pairwise constraints can each have support while being jointly
+inconsistent. Here `A=B` and `B=C` conflict with `A!=C`:
+
+``` julia
+binary(v) = FiniteAxis(v, [:no, :yes])
+inconsistent = FactorGraph([Factor([binary(:A), binary(:B)], [1.0 0.0; 0.0 1.0]),
+                            Factor([binary(:B), binary(:C)], [1.0 0.0; 0.0 1.0]),
+                            Factor([binary(:A), binary(:C)], [0.0 1.0; 1.0 0.0])])
+_, unchecked = infer(inconsistent, :A; backend = BeliefPropagation())
+(converged = unchecked.converged, evidence_checked = unchecked.evidence_checked)
+```
+
+    (converged = true, evidence_checked = false)
+
+``` julia
+try
+    infer(inconsistent, :A; backend = BeliefPropagation(check_evidence = true))
+catch e
+    typeof(e)
+end
+```
+
+    KernelNormalizationError
+
+The optional exact VE pass detects the contradiction. Its potentially
+exponential cost is explicit: it is not silently imposed on every
+loopy-BP run.
 
 ## Timing: all marginals by junction tree versus variable elimination
 
@@ -328,17 +380,25 @@ big_ev = Dict(:X60 => :a, :X31 => :b)
 ``` julia
 rows = map((JunctionTree(), VariableElimination(), BeliefPropagation())) do backend
     all_marginals(big; evidence=big_ev, backend)          # warm up compilation
-    t = @elapsed ms = all_marginals(big; evidence=big_ev, backend)
+    times = [@elapsed all_marginals(big; evidence=big_ev, backend) for _ in 1:3]
+    t = minimum(times)
+    ms = all_marginals(big; evidence=big_ev, backend)
     reference = all_marginals(big; evidence=big_ev, backend=VariableElimination())
     err = maximum(maximum(abs.(ms[v].table .- reference[v].table)) for v in variables(big))
     (backend=nameof(typeof(backend)), seconds=round(t; digits=4), max_error=round(err; sigdigits=3))
 end
 foreach(println, rows)
+(julia = string(VERSION), cpu = Sys.CPU_NAME, threads = Threads.nthreads(),
+ repetitions = 3, statistic = "minimum after warm-up")
 ```
 
     (backend = :JunctionTree, seconds = 0.001, max_error = 2.22e-16)
-    (backend = :VariableElimination, seconds = 0.0231, max_error = 0.0)
-    (backend = :BeliefPropagation, seconds = 0.0055, max_error = 0.0521)
+    (backend = :VariableElimination, seconds = 0.0253, max_error = 0.0)
+    (backend = :BeliefPropagation, seconds = 0.0119, max_error = 0.0521)
+
+    (julia = "1.12.7", cpu = "apple-m1", threads = 1, repetitions = 3, statistic = "minimum after warm-up")
+
+These timings describe this run, not a portable performance guarantee.
 
 The junction tree gives the exact answers of variable elimination at a
 fraction of its cost (one calibration instead of one elimination per

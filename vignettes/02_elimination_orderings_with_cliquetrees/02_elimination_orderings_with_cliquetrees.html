@@ -2556,35 +2556,41 @@ window.Quarto = {
 <span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>    (strategy<span class="op">=</span><span class="fu">typeof</span>(s), width<span class="op">=</span>d.treewidth, max_factor_size<span class="op">=</span>d.max_factor_size,</span>
 <span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>     multiplications<span class="op">=</span>d.n_multiplications, seconds<span class="op">=</span><span class="fu">round</span>(t; digits<span class="op">=</span><span class="fl">4</span>))</span>
 <span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span>
-<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a><span class="fu">foreach</span>(println, results)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a><span class="fu">foreach</span>(println, results)</span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>(julia <span class="op">=</span> <span class="fu">string</span>(<span class="cn">VERSION</span>), cpu <span class="op">=</span> <span class="bu">Sys</span>.CPU_NAME, threads <span class="op">=</span> <span class="bu">Threads</span>.<span class="fu">nthreads</span>(),</span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a> repetitions <span class="op">=</span> <span class="fl">1</span>, statistic <span class="op">=</span> <span class="st">&quot;single run after warm-up&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>(strategy = MinFill, width = 4, max_factor_size = 32, multiplications = 59, seconds = 0.0006)
 (strategy = MinDegree, width = 4, max_factor_size = 32, multiplications = 59, seconds = 0.0004)
-(strategy = AMDOrder, width = 4, max_factor_size = 32, multiplications = 59, seconds = 0.0004)</code></pre>
+(strategy = AMDOrder, width = 4, max_factor_size = 32, multiplications = 59, seconds = 0.0005)</code></pre>
+</div>
+<div class="cell-output cell-output-display" data-execution_count="1">
+<pre><code>(julia = &quot;1.12.7&quot;, cpu = &quot;apple-m1&quot;, threads = 1, repetitions = 1, statistic = &quot;single run after warm-up&quot;)</code></pre>
 </div>
 </div>
+<p>These are measurements of this execution, not portable timing guarantees. Repeated measurements would be needed for a performance comparison.</p>
 <p>A poor order shows up immediately: eliminating in reverse topological order builds large intermediate factors.</p>
 <div id="20" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>reverse_order <span class="op">=</span> <span class="fu">UserOrder</span>(<span class="fu">reverse</span>([<span class="fu">Symbol</span>(<span class="op">:</span>X, i) for i <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="fl">59</span>]))</span>
-<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>t <span class="op">=</span> <span class="pp">@elapsed</span> post_rev, d_rev <span class="op">=</span> <span class="fu">variable_elimination</span>(big, query; order<span class="op">=</span>reverse_order)</span>
-<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>(width<span class="op">=</span>d_rev.treewidth, max_factor_size<span class="op">=</span>d_rev.max_factor_size, seconds<span class="op">=</span><span class="fu">round</span>(t; digits<span class="op">=</span><span class="fl">4</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>reverse_order <span class="op">=</span> <span class="fu">UserOrder</span>(<span class="fu">reverse</span>([<span class="fu">Symbol</span>(<span class="op">:</span>X, i) for i <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="fl">59</span>]))</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>t <span class="op">=</span> <span class="pp">@elapsed</span> post_rev, d_rev <span class="op">=</span> <span class="fu">variable_elimination</span>(big, query; order<span class="op">=</span>reverse_order)</span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>(width<span class="op">=</span>d_rev.treewidth, max_factor_size<span class="op">=</span>d_rev.max_factor_size, seconds<span class="op">=</span><span class="fu">round</span>(t; digits<span class="op">=</span><span class="fl">4</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>(width = 7, max_factor_size = 256, seconds = 0.5589)</code></pre>
+<pre><code>(width = 7, max_factor_size = 256, seconds = 0.6081)</code></pre>
 </div>
 </div>
 <p>All orders give the same posterior:</p>
 <div id="22" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>posts <span class="op">=</span> [<span class="fu">variable_elimination</span>(big, query; order<span class="op">=</span>s)[<span class="fl">1</span>] for s <span class="kw">in</span> [<span class="fu">MinFill</span>(), <span class="fu">MinDegree</span>(), <span class="fu">AMDOrder</span>(), reverse_order]]</span>
-<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="fu">all</span>(p <span class="op">≈</span> posts[<span class="fl">1</span>] <span class="cf">for</span> p <span class="kw">in</span> posts)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>posts <span class="op">=</span> [<span class="fu">variable_elimination</span>(big, query; order<span class="op">=</span>s)[<span class="fl">1</span>] for s <span class="kw">in</span> [<span class="fu">MinFill</span>(), <span class="fu">MinDegree</span>(), <span class="fu">AMDOrder</span>(), reverse_order]]</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="fu">all</span>(p <span class="op">≈</span> posts[<span class="fl">1</span>] <span class="cf">for</span> p <span class="kw">in</span> posts)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>true</code></pre>
 </div>
 </div>
 <p>The exact treewidth is affordable on a 20-variable slice of the same construction and lets us see how far the heuristics are from optimal:</p>
 <div id="24" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>small_kernels, small_parents <span class="op">=</span> <span class="fu">random_network</span>(<span class="fu">MersenneTwister</span>(<span class="fl">7</span>), <span class="fl">20</span>)</span>
-<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>small <span class="op">=</span> <span class="fu">FactorGraph</span>([<span class="fu">Factor</span>(k, small_parents[v], v) for (v, k) <span class="kw">in</span> small_kernels])</span>
-<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>[<span class="fu">typeof</span>(s) <span class="op">=&gt;</span> <span class="fu">treewidth</span>(small, s) for s <span class="kw">in</span> strategies]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>small_kernels, small_parents <span class="op">=</span> <span class="fu">random_network</span>(<span class="fu">MersenneTwister</span>(<span class="fl">7</span>), <span class="fl">20</span>)</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>small <span class="op">=</span> <span class="fu">FactorGraph</span>([<span class="fu">Factor</span>(k, small_parents[v], v) for (v, k) <span class="kw">in</span> small_kernels])</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>[<span class="fu">typeof</span>(s) <span class="op">=&gt;</span> <span class="fu">treewidth</span>(small, s) for s <span class="kw">in</span> strategies]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>4-element Vector{Pair{DataType, Int64}}:
         MinFill =&gt; 6

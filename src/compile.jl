@@ -32,7 +32,7 @@ end
 # semantics, in the shape that `ancestral_sample` and `compile` consume.
 # Throws `CompileError` for an open model or missing kernels, and the typed
 # exceptions of `BayesianNetworks.validate` for anything else.
-function _model_kernels(m::BayesModel)
+function _model_kernels(m::BayesModel; atol::Real=BayesianNetworks.DEFAULT_ATOL)
     bn = syntax(m)
     open_vars = Symbol[variable_name(bn, v) for v in exogenous(bn)]
     isempty(open_vars) ||
@@ -42,7 +42,7 @@ function _model_kernels(m::BayesModel)
     isempty(absent) ||
         throw(CompileError("the model has mechanisms without a kernel; bind them with bind_kernel or bind_cpt",
                            absent))
-    BayesianNetworks.validate(m; closed=true, unique_names=true, semantics=true)
+    BayesianNetworks.validate(m; closed=true, unique_names=true, semantics=true, atol=atol)
     order = Symbol[variable_name(bn, v) for v in topological_order(bn)]
     kernels = Dict{Symbol,FiniteKernel}()
     parent_names = Dict{Symbol,Vector{Symbol}}()
@@ -57,12 +57,12 @@ function _model_kernels(m::BayesModel)
 end
 
 """
-    compile(m::BayesModel, backend=FactorGraphBackend()) -> FactorGraph
+    compile(m::BayesModel, backend=FactorGraphBackend(); atol=DEFAULT_ATOL) -> FactorGraph
 
 Compile a closed `BayesianNetworks.BayesModel` with full semantics to a
 [`FactorGraph`](@ref): for every mechanism `kappa_X(x | p_1, ..., p_k)` the
-factor `Factor(kernel(m, X), parents, X)` with scope `(p_1, ..., p_k, X)`
-(parents in `input_position` order) and the parents-first table `cpt(k)`
+factor `Factor(kernel(m, X), parents, X)` with scope `unique((p_1, ..., p_k, X))`
+(parents in `input_position` order) and the diagonal of the parents-first table `cpt(k)`
 (ADR 0002). Factors are listed in topological order of their targets, so
 [`variables`](@ref)`(fg)` is a topological order of the model, and
 `fg.provenance[i]` is the named tuple `(variable, mechanism, id)` with the
@@ -73,6 +73,8 @@ point-mass reference, materialised by `BayesianNetworks.kernel`, so an
 intervened model compiles unchanged; the evidence recorded by `observe` is
 not part of the factor graph (it is applied by [`infer`](@ref)).
 
+`atol` is forwarded to semantic validation, so rounded CPTs can be evaluated
+with the same normalization tolerance used when they were bound or read.
 Throws [`CompileError`](@ref) naming the offending variables when the model is
 open or a mechanism has no kernel, and the exceptions of
 `BayesianNetworks.validate` for structural or binding problems.
@@ -93,8 +95,9 @@ julia> fg.provenance[1]
 (variable = :Climate, mechanism = :Climate_mechanism, id = 5)
 ```
 """
-function compile(m::BayesModel, ::FactorGraphBackend=FactorGraphBackend())
-    kernels, order, parent_names, mechanism = _model_kernels(m)
+function compile(m::BayesModel, ::FactorGraphBackend=FactorGraphBackend();
+                 atol::Real=BayesianNetworks.DEFAULT_ATOL)
+    kernels, order, parent_names, mechanism = _model_kernels(m; atol=atol)
     factors = Factor{Float64}[]
     provenance = Any[]
     for x in order

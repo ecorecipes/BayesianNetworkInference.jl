@@ -20,8 +20,9 @@ with `BayesianNetworkFormats.jl` (file formats) and `EcologicalBayesianNetworks.
   a factor is a symmetric tensor under pointwise product and summation.
 - `FactorGraph`: a bag of factors with its interaction (moral) graph as a `Graphs.SimpleGraph` and per-factor
   provenance.
-- The bridge to `BayesianNetworks.jl`: `compile(model)` builds one factor per mechanism (scope
-  `(parents..., child)`, provenance `(variable, mechanism, id)`), and `infer(model, query; evidence, backend)`,
+- The bridge to `BayesianNetworks.jl`: `compile(model; atol=DEFAULT_ATOL)` builds one factor per mechanism
+  (first-occurrence parent/child scope, diagonal extraction for repeated input slots,
+  provenance `(variable, mechanism, id)`), and `infer(model, query; evidence, backend, atol)`,
   `posterior(model, var)` and `ancestral_sample(model, n)` work directly on a `BayesModel`, including models read
   from Netica, GeNIe, HUGIN, BIF, DSC and UAI files and models rewritten by `observe`, `do_intervention` and
   `soft_intervention`. Every model-level answer is tested against the brute-force `marginal` of `BayesianNetworks.jl`.
@@ -36,10 +37,16 @@ with `BayesianNetworkFormats.jl` (file formats) and `EcologicalBayesianNetworks.
   message passing; `all_marginals(fg; evidence)` (also on a `BayesModel`) and `clique_beliefs` from one
   calibration, `infer` for any query inside a clique (variable elimination otherwise, reported by
   `JunctionTreeDiagnostics.fallback`), `JunctionTreeDiagnostics`.
-- `BeliefPropagation` backend: sum-product message passing on the factor graph, exact on tree-structured
-  graphs (`is_tree`) and loopy otherwise, with damping, tolerance, iteration cap, flooding or sequential
-  schedules and `BPDiagnostics` (iterations, convergence, residual, and whether the conditioned graph is a
-  tree). Impossible evidence raises `KernelNormalizationError` in all three backends.
+- `BeliefPropagation` backend: sum-product with damping, iteration limits and flooding/sequential
+  schedules. `BPDiagnostics` reports the undamped fixed-point residual at the returned iterate;
+  it is not a general marginal-error bound. Fixed points on feasible trees are exact, whereas
+  loopy beliefs are approximations. Local zero support raises `KernelNormalizationError`,
+  but does not detect every globally impossible event. Opt into
+  `BeliefPropagation(check_evidence=true)` for an exact VE feasibility pass;
+  `diagnostics.evidence_checked` distinguishes that from unknown feasibility.
+- Exact VE/JT posterior entry points check global mass, including disconnected components and
+  all-observed shortcuts. An empty `infer` query still returns unnormalized evidence mass,
+  which may legitimately be zero. Integer factors promote to division-compatible posterior types.
 - `ancestral_sample` over named kernels in topological order and `empirical_marginal` for Monte Carlo cross-checks.
 - Out-of-sample validation: `Cases` datasets (a vector of `Dict{Symbol,Symbol}` observations, complete or
   partial), `predict` for a withheld target, the proper scoring rules `brier_score`, `log_score` and
@@ -50,6 +57,29 @@ with `BayesianNetworkFormats.jl` (file formats) and `EcologicalBayesianNetworks.
   ranking of every variable against a target) and `tornado` (the range one finding could move an answer).
 - Typed exceptions (`ScopeError`, `ShapeError`, `CompileError`, plus `KernelNormalizationError` / `InvalidAxisError`
   from `FiniteKernels.jl`) carrying the offending variable names.
+
+## Exact finite-model proof scope
+
+The sibling `BayesianNetworks.jl/proofs/` project now proves posterior
+normalization and evidence clamping, scoped bucket elimination, actual cached
+Shafer-Shenoy collect/distribute passes, and d-separation soundness for the
+moralized ancestral graph. Junction-tree hypotheses are structural running
+intersection and complete factor/variable coverage; messages are computed, not
+assumed correct. Arbitrary branching and disconnected forests are covered.
+
+These are exact finite-model theorems, not verification of this package's
+Float64 arrays, CliqueTrees construction or iterative BP. In a forest, Julia
+stores component-local raw beliefs and a separate global mass; the formal
+virtual-root encoding includes outside-component scalar factors in every
+belief. Empty `infer` queries return unnormalized mass rather than a normalized
+empty-query posterior. Conditional numerical bounds require an explicit
+positive evidence-mass floor and a sufficiently small error budget.
+
+`BayesianNetworks.proof_certificate(m)` exports ordered raw records and exact
+bound scalars for a separate Lean data checker, before `compile` converts
+factors to Float64. See the
+[certificate guide](https://ecorecipes.github.io/BayesianNetworks.jl/certificates/).
+No proof-assistant dependency is added to runtime inference.
 
 ## Installation
 

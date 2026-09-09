@@ -132,7 +132,12 @@ results = map([MinFill(), MinDegree(), AMDOrder()]) do s
      multiplications=d.n_multiplications, seconds=round(t; digits=4))
 end
 foreach(println, results)
+(julia = string(VERSION), cpu = Sys.CPU_NAME, threads = Threads.nthreads(),
+ repetitions = 1, statistic = "single run after warm-up")
 ```
+
+These are measurements of this execution, not portable timing guarantees.
+Repeated measurements would be needed for a performance comparison.
 
 A poor order shows up immediately: eliminating in reverse topological order builds
 large intermediate factors.

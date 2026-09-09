@@ -134,6 +134,8 @@ Base.length(f::Factor) = length(f.table)
 Base.eltype(::Type{Factor{T}}) where {T} = T
 Base.eltype(::Factor{T}) where {T} = T
 
+_division_type(::Type{T}) where {T<:Real} = typeof(one(T) / one(T))
+
 """
     axis(f::Factor, var::Symbol) -> FiniteAxis
 
@@ -197,6 +199,23 @@ function _broadcastable(h::Factor, vars::Vector{Symbol}, sz::Tuple)
     return reshape(t, shape)
 end
 
+function _union_axes(f::Factor, g::Factor, operation::Symbol)
+    vars = copy(f.vars)
+    axes = copy(f.axes)
+    for (v, a) in zip(g.vars, g.axes)
+        i = findfirst(==(v), vars)
+        if i === nothing
+            push!(vars, v)
+            push!(axes, a)
+        elseif axes[i] != a
+            throw(ShapeError(operation,
+                             "factors disagree about the states of $(repr(v))",
+                             axes[i].labels, a.labels))
+        end
+    end
+    return vars, axes
+end
+
 """
     multiply(f::Factor, g::Factor) -> Factor
     multiply(fs::Factor...) -> Factor
@@ -208,19 +227,7 @@ axis order. Shared variables must carry identical axes ([`ShapeError`](@ref)
 otherwise). The element type is the promotion of the two element types.
 """
 function multiply(f::Factor{S}, g::Factor{U}) where {S,U}
-    vars = copy(f.vars)
-    axes = copy(f.axes)
-    for (v, a) in zip(g.vars, g.axes)
-        i = findfirst(==(v), vars)
-        if i === nothing
-            push!(vars, v)
-            push!(axes, a)
-        elseif axes[i] != a
-            throw(ShapeError(:multiply,
-                             "factors disagree about the states of $(repr(v))",
-                             axes[i].labels, a.labels))
-        end
-    end
+    vars, axes = _union_axes(f, g, :multiply)
     sz = Tuple(map(length, axes))
     T = promote_type(S, U)
     table = Array{T}(undef, sz)
@@ -341,8 +348,10 @@ end
     Factor(k::FiniteKernel, inputs::Vector{Symbol}, output::Symbol) -> Factor
 
 The factor `phi(inputs..., output) = k(output | inputs...)` of a mechanism.
-The scope is `(inputs..., output)` and the table is the parents-first layout
-`cpt(k)`; the kernel table is reused without copying when `k` has no inputs.
+The scope is the first-occurrence order of `(inputs..., output)`. Repeated
+variable names identify input slots: the parents-first table `cpt(k)` is
+restricted to their diagonal, not merely reshaped. Repeated slots must have
+identical state labels. The kernel table is reused when `k` has no inputs.
 Axes are renamed to the given variable names while keeping the kernel's
 labels. Throws [`ShapeError`](@ref) unless `k` has one output axis and
 `length(inputs)` input axes.
@@ -357,7 +366,22 @@ function Factor(k::FiniteKernel, inputs::AbstractVector{Symbol}, output::Symbol)
     axes = FiniteAxis[FiniteAxis(v, labels(a)) for (v, a) in zip(inputs, k.dom.axes)]
     push!(axes, FiniteAxis(output, labels(k.codom.axes[1])))
     table = isempty(inputs) ? k.table : cpt(k)
-    return Factor(vcat(collect(inputs), output), axes, table)
+    names = vcat(collect(inputs), output)
+    allunique(names) && return Factor(names, axes, table)
+    vars = unique(names)
+    positions = Dict(v => i for (i, v) in enumerate(vars))
+    unique_axes = FiniteAxis[axes[findfirst(==(v), names)] for v in vars]
+    for (v, ax) in zip(names, axes)
+        expected = unique_axes[positions[v]]
+        labels(ax) == labels(expected) ||
+            throw(ShapeError(:Factor, "repeated slots of $(repr(v)) need identical states",
+                             labels(expected), labels(ax)))
+    end
+    diagonal = Array{eltype(table)}(undef, Tuple(length.(unique_axes)))
+    for I in CartesianIndices(diagonal)
+        diagonal[I] = table[ntuple(j -> I[positions[names[j]]], length(names))...]
+    end
+    return Factor(vars, unique_axes, diagonal)
 end
 Factor(k::FiniteKernel, output::Symbol) = Factor(k, Symbol[], output)
 
@@ -371,14 +395,15 @@ is checked for normalisation over the outputs, throwing
 to one. `inputs` and `outputs` together must be a permutation of `scope(f)`.
 """
 function FiniteKernels.FiniteKernel(f::Factor, inputs::AbstractVector{Symbol},
-                                    outputs::AbstractVector{Symbol})
+                                    outputs::AbstractVector{Symbol};
+                                    atol::Real=BayesianNetworks.DEFAULT_ATOL)
     g = reorder(f, vcat(collect(outputs), collect(inputs)))
     no = length(outputs)
     dom = FiniteSpace(g.axes[(no + 1):end])
     codom = FiniteSpace(g.axes[1:no])
-    return FiniteKernel(dom, codom, g.table; check=true)
+    return FiniteKernel(dom, codom, g.table; check=true, atol=atol)
 end
 function FiniteKernels.FiniteKernel(f::Factor, inputs::AbstractVector{Symbol},
-                                    output::Symbol)
-    return FiniteKernel(f, inputs, [output])
+                                    output::Symbol; kwargs...)
+    return FiniteKernel(f, inputs, [output]; kwargs...)
 end

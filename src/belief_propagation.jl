@@ -2,60 +2,73 @@
 # exact on tree-structured graphs, loopy with convergence diagnostics otherwise.
 
 """
-    BeliefPropagation(; damping=0.0, tol=1e-8, maxiter=200, schedule=:flooding)
+    BeliefPropagation(; damping=0.0, tol=1e-8, maxiter=200, schedule=:flooding, check_evidence=false)
 
 Sum-product message passing on the factor graph (see
 [`belief_propagation`](@ref)). Messages are damped towards their previous
 value with weight `damping` (in `[0, 1)`), iteration stops when the largest
-change of any factor-to-variable message is below `tol` or after `maxiter`
+undamped message-equation residual at the returned iterate is below `tol` or after `maxiter`
 sweeps, and `schedule` is `:flooding` (every message updated from the
 previous sweep's messages) or `:sequential` (factor by factor, each update
-seeing the latest messages). The result is exact when the factor graph
-conditioned on the evidence is a tree ([`is_tree`](@ref)) and approximate
-(loopy belief propagation) otherwise; [`BPDiagnostics`](@ref) reports
-convergence. Throws `ArgumentError` for parameters outside these ranges.
+seeing the latest messages). A fixed point on a feasible tree has the exact
+marginals; a finite tolerance is not itself a marginal-error bound.
+`check_evidence=true` first uses exact variable elimination to check global
+evidence feasibility, potentially at exponential cost. Without that opt-in,
+local zero-support errors are detected but global feasibility is not certified.
+[`BPDiagnostics`](@ref) reports both convergence and whether evidence was checked.
+Throws `ArgumentError` for parameters outside these ranges.
 """
 struct BeliefPropagation <: InferenceBackend
     damping::Float64
     tol::Float64
     maxiter::Int
     schedule::Symbol
-    function BeliefPropagation(damping::Real, tol::Real, maxiter::Integer, schedule::Symbol)
+    check_evidence::Bool
+    function BeliefPropagation(damping::Real, tol::Real, maxiter::Integer,
+                               schedule::Symbol, check_evidence::Bool)
         0 <= damping < 1 ||
             throw(ArgumentError("damping must lie in [0, 1), got damping = $damping"))
-        tol > 0 || throw(ArgumentError("tol must be positive, got tol = $tol"))
+        isfinite(tol) && tol > 0 ||
+            throw(ArgumentError("tol must be finite and positive, got tol = $tol"))
         maxiter >= 1 ||
             throw(ArgumentError("maxiter must be at least 1, got maxiter = $maxiter"))
         schedule in (:flooding, :sequential) ||
             throw(ArgumentError("schedule must be :flooding or :sequential, got schedule = $(repr(schedule))"))
-        return new(damping, tol, maxiter, schedule)
+        return new(damping, tol, maxiter, schedule, check_evidence)
     end
 end
+function BeliefPropagation(damping::Real, tol::Real, maxiter::Integer, schedule::Symbol)
+    return BeliefPropagation(damping, tol, maxiter, schedule, false)
+end
 function BeliefPropagation(; damping::Real=0.0, tol::Real=1e-8, maxiter::Integer=200,
-                           schedule::Symbol=:flooding)
-    return BeliefPropagation(damping, tol, maxiter, schedule)
+                           schedule::Symbol=:flooding, check_evidence::Bool=false)
+    return BeliefPropagation(damping, tol, maxiter, schedule, check_evidence)
 end
 
 """
-    BPDiagnostics(iterations, converged, max_residual, tree)
+    BPDiagnostics(iterations, converged, max_residual, tree, evidence_checked=false)
 
 What a run of [`belief_propagation`](@ref) did: the number of sweeps
-performed, whether the largest change of a factor-to-variable message fell
-below the tolerance, that largest change at the last sweep, and whether the
-factor graph conditioned on the evidence was a tree.
+performed, whether the undamped message-equation residual fell below the
+tolerance, that residual at the returned iterate, whether the conditioned
+factor graph was a tree, and whether global evidence feasibility was checked.
 
 The field is `tree`, not `exact`, because being a tree is a property of the
 graph while exactness is a property of the iterate. On a tree the fixed
-point of the message equations is the exact marginal, so `tree && converged`
-means the returned marginals are exact up to the convergence tolerance: they
-differ from the fixed point by an amount of the order of `max_residual`,
-which with `damping > 0` is `backend.tol` rather than machine precision.
+point of the message equations gives exact marginals for feasible evidence.
+`max_residual` is not a general bound on marginal error. In particular,
+`converged` does not certify global evidence feasibility: unless
+`evidence_checked` is true, that status is unknown.
 """
 struct BPDiagnostics
     iterations::Int
     converged::Bool
     max_residual::Float64
     tree::Bool
+    evidence_checked::Bool
+end
+function BPDiagnostics(iterations::Integer, converged::Bool, max_residual::Real, tree::Bool)
+    return BPDiagnostics(iterations, converged, max_residual, tree, false)
 end
 
 """
@@ -63,8 +76,8 @@ end
 
 Whether the bipartite factor graph (one node per variable, one per factor,
 an edge for every scope membership) has no cycles, i.e. is a forest. On such
-a graph [`belief_propagation`](@ref) is exact after a number of sweeps
-bounded by the diameter. A compiled Bayesian network is a tree here exactly
+a graph undamped messages reach the exact fixed point after sufficiently many
+sweeps when evidence is feasible. A compiled Bayesian network is a tree here exactly
 when its DAG is a polytree. Extends `Graphs.is_tree`.
 """
 Graphs.is_tree(fg::FactorGraph) = _is_forest(fg.factors)
@@ -145,7 +158,7 @@ function _factor_message(fac::Factor{T}, incoming::Vector{Vector{T}}, k::Int) wh
     return vec(sum(t; dims=dims))
 end
 
-# Update the messages out of factor `f`, returning the largest change.
+# Update the messages out of factor `f`; convergence is measured separately.
 function _update_factor!(st::_BPState{T}, f::Int, damping) where {T}
     fac = st.factors[f]
     residual = 0.0
@@ -153,9 +166,22 @@ function _update_factor!(st::_BPState{T}, f::Int, damping) where {T}
         new = _normalize!(_factor_message(fac, st.to_factor[f], k),
                           "message from factor $f to variable $(repr(fac.vars[k]))")
         old = st.to_var[f][k]
-        iszero(damping) || (new .= (1 - damping) .* new .+ damping .* old)
         residual = max(residual, maximum(abs.(new .- old)))
+        iszero(damping) || (new .= (1 - damping) .* new .+ damping .* old)
         st.to_var[f][k] = new
+    end
+    return residual
+end
+
+function _fixed_point_residual!(st::_BPState)
+    for (x, inc) in enumerate(st.incidences), (f, k) in inc
+        st.to_factor[f][k] = _variable_message(st, x, f, k)
+    end
+    residual = 0.0
+    for (f, fac) in enumerate(st.factors), k in 1:ndims(fac)
+        target = _normalize!(_factor_message(fac, st.to_factor[f], k),
+                             "message from factor $f to variable $(repr(fac.vars[k]))")
+        residual = max(residual, maximum(abs.(target .- st.to_var[f][k])))
     end
     return residual
 end
@@ -197,26 +223,29 @@ Sum-product belief propagation on `fg` conditioned on `evidence`. Factors
 are conditioned first; a factor left with an empty scope only scales the
 joint, so it is dropped from the message passing after its value has been
 multiplied into the scale `P(evidence)` contributed by such factors.
-Messages start uniform and are updated by the sum-product equations of
-SPEC section 20 until the largest change of a factor-to-variable message is
+Messages use a floating-point type (integer factors are promoted), start
+uniform and follow the sum-product equations of SPEC section 20 until the
+largest undamped message-equation residual at the current iterate is
 below `backend.tol` or `backend.maxiter` sweeps have run. The marginal of
 every unobserved variable is the normalised product of its incoming
 messages; an observed variable maps to the point mass at its label. On a
 tree-structured graph ([`is_tree`](@ref) after conditioning) the fixed point
 is the exact marginal and `diagnostics.tree` is true; otherwise the
 marginals are the loopy approximation and `diagnostics.converged` says
-whether the fixed point was reached.
+whether the residual tolerance was reached, not a bound on marginal error.
 
 The update equations are Pearl's belief propagation [Pearl1988](@cite) in
 the factor-graph (sum-product) form of [Kschischang2001](@cite); the
 behaviour of the loopy fixed point on graphs with cycles is the empirical
 study of [MurphyWeissJordan1999](@cite).
 
-Impossible evidence is an error, as it is for [`variable_elimination`](@ref)
-and the [`JunctionTree`](@ref) backend: when a dropped scalar factor is
+Detectable impossible evidence is an error: when a dropped scalar factor is
 zero, when a message is identically zero, or when the belief of a variable
 has zero mass, `FiniteKernels.KernelNormalizationError` is thrown rather
-than a normalised belief returned.
+than a normalised belief returned. Local support is not a global feasibility
+test on loopy graphs, and damped iterates may retain tiny positive support.
+Set `backend.check_evidence=true` to run an exact VE feasibility check first;
+`diagnostics.evidence_checked` records that opt-in.
 
 Throws [`ScopeError`](@ref) for evidence on unknown variables and
 `FiniteKernels.InvalidAxisError` for a label a variable does not have.
@@ -226,10 +255,15 @@ function belief_propagation(fg::FactorGraph{T},
                             evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}()) where {T}
     _check_query(fg, Symbol[], evidence)
     ev = Dict{Symbol,Symbol}(evidence)
-    factors = Factor{T}[]
-    scale = one(T)
+    if backend.check_evidence
+        mass = variable_elimination(fg, Symbol[]; evidence=ev)[1].table[]
+        _require_evidence_mass(mass, ev)
+    end
+    R = typeof(float(one(T)))
+    factors = Factor{R}[]
+    scale = one(R)
     for f in fg.factors
-        g = condition(f, ev)
+        g = _convert_factor(R, condition(f, ev))
         isempty(g.vars) ? (scale *= g.table[]) : push!(factors, g)
     end
     iszero(scale) &&
@@ -240,21 +274,24 @@ function belief_propagation(fg::FactorGraph{T},
     residual = Inf
     converged = false
     while iterations < backend.maxiter
-        residual = _sweep!(st, backend.damping, backend.schedule)
+        _sweep!(st, backend.damping, backend.schedule)
+        residual = _fixed_point_residual!(st)
         iterations += 1
         if residual < backend.tol
             converged = true
             break
         end
     end
-    marginals = Dict{Symbol,Factor{T}}()
+    marginals = Dict{Symbol,Factor{R}}()
     for (x, v) in enumerate(st.vars)
         marginals[v] = _belief(st, x)
     end
     for (v, l) in ev
-        marginals[v] = _point_mass(T, fg.axes[v], l)
+        marginals[v] = _point_mass(R, fg.axes[v], l)
     end
-    return marginals, BPDiagnostics(iterations, converged, residual, _is_forest(factors))
+    return marginals,
+           BPDiagnostics(iterations, converged, residual, _is_forest(factors),
+                         backend.check_evidence)
 end
 
 function _infer(backend::BeliefPropagation, fg::FactorGraph, query, evidence)

@@ -23,7 +23,8 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
 - `Factor` and `FiniteKernel` are distinct types with explicit conversions (`Factor(k, inputs, output)`,
   `FiniteKernel(f, inputs, outputs)`). A kernel carries an input/output partition and a normalisation invariant;
   a factor is an unnormalised symmetric tensor under (×, Σ). Never treat one as the other implicitly.
-- `Factor(k, inputs, output)` has scope `(inputs..., output)` and table `cpt(k)` (parents-first); the asia test
+- `Factor(k, inputs, output)` has first-occurrence scope order and the diagonal of `cpt(k)` when input
+  slots repeat. It never drops a repeated name without identifying its table indices. The asia test
   `P(dysp = yes) = 0.4360` pins this against `BayesianNetworkFormats`' independent value.
 - `variable_elimination` is checked against `brute_force_marginal` (product of all factors) on asia, the SPEC section 45
   habitat chain and random DAGs; ancestral sampling is checked against it within Monte Carlo tolerance;
@@ -34,6 +35,15 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   `BayesianNetworks.marginal` (the joint-table oracle) on the reference model, asia, intervened models and random models.
 - `infer(m, query; evidence)` merges the explicit evidence into the evidence recorded by `observe` (explicit wins);
   interventions are mechanism rewrites and compile unchanged (point masses via `BayesianNetworks.kernel`).
+- Every model-facing inference, sampling, scoring and sensitivity entry point forwards
+  `atol=BayesianNetworks.DEFAULT_ATOL` to compilation/semantic validation.
+- `_union_axes` and `_broadcastable` in `factors.jl` are also consumed by InfluenceDiagrams'
+  valuation arithmetic. Keep their axis-agreement and first-occurrence ordering contracts stable.
+- Exact posterior entry points reject globally zero mass before returning component marginals or
+  observed point masses. Empty inference queries retain their unnormalized mass convention.
+- BP convergence uses the undamped residual at the returned iterate, not the damped step and not a
+  marginal-error bound. `check_evidence=true` opts into VE feasibility; `evidence_checked=false`
+  leaves global feasibility unknown. Integer inputs promote to division-compatible types.
 - Names shared with BayesianNetworks.jl (`variables`, `axis`, `empirical_marginal`), CliqueTrees.jl (`treewidth`)
   and Graphs.jl (`is_tree`) are extended with `import ...: ...`, never shadowed, so `using BayesianNetworks, BayesianNetworkInference` stays
   unambiguous. Never redefine `BayesianNetworks.sample(::BayesModel, n)`; the sampler here is `ancestral_sample(m, n)`.
@@ -57,7 +67,7 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   safe), `clique_beliefs`, `all_marginals` (JT in one pass; VE method loops per variable; evidence variables
   are point masses), `infer` for one-clique queries with a VE fallback that warns and sets
   `JunctionTreeDiagnostics.fallback` (the return type never changes), `JunctionTreeDiagnostics`.
-- `src/belief_propagation.jl`: `BeliefPropagation(; damping, tol, maxiter, schedule)`, `BPDiagnostics`,
+- `src/belief_propagation.jl`: `BeliefPropagation(; damping, tol, maxiter, schedule, check_evidence)`, `BPDiagnostics`,
   `belief_propagation(fg, backend; evidence)` (sum-product, SPEC section 20; `:flooding` or `:sequential`),
   `is_tree` (extends `Graphs.is_tree`; forest check of the bipartite factor graph; `BPDiagnostics.tree` reports it per run after conditioning),
   `infer` for single-variable queries only (`ScopeError` otherwise).
@@ -101,6 +111,25 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   02 orderings, 03 sampling and Monte Carlo checks, 04 junction trees and belief propagation,
   05 validation and scoring (simulate cases, grouped holdout, calibration, prior baseline, mutual information).
 - Later milestones: `ext/` adapters for external backends.
+
+## Formal correspondence
+
+The exact finite-model inference proofs live in the sibling
+`BayesianNetworks.jl/proofs/`, not in a runtime dependency. They include
+partial-assignment posteriors and explicit evidence clamping, bucket VE,
+cached collect/distribute on structurally valid junction trees, and
+moralized-ancestral d-separation soundness. Full factor/variable coverage and
+running intersection are premises; precomputed correct messages are not.
+Arbitrary branching is encoded by proved grafting.
+
+The formal virtual-root forest has global beliefs; `cal.beliefs` here are
+component-local and require outside scalar masses for raw-array comparison.
+Do not equate the formal normalized empty-query posterior with `infer(fg, [])`,
+which returns unnormalized mass. Concrete CliqueTrees/array/IEEE and iterative
+BP refinement remain separate. The numerical posterior bound has an explicit
+positive evidence-mass floor and error-budget premise.
+`BayesianNetworks.proof_certificate` exports exact bound data before this
+package's Float64 factor conversion; it does not certify that conversion.
 
 ## Commands
 
