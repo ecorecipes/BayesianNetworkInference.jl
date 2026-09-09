@@ -87,7 +87,8 @@ export EliminationStrategy, MinFill, MinDegree, ExactTreewidth, AMDOrder, UserOr
        elimination_order, treewidth
 # Inference
 export InferenceBackend, VariableElimination, InferenceDiagnostics, variable_elimination,
-       infer, joint_factor, brute_force_marginal
+       infer, joint_factor, brute_force_marginal, LogVariableElimination,
+       LogInferenceDiagnostics, LogFactorDomainError, log_variable_elimination, log_evidence_probability
 # Junction trees and belief propagation
 export JunctionTree, CompiledJunctionTree, CalibratedJunctionTree, JunctionTreeDiagnostics,
        build_junction_tree, calibrate, clique_beliefs, all_marginals, BeliefPropagation,
@@ -111,6 +112,7 @@ include("factor_graph.jl")
 include("orderings.jl")
 include("variable_elimination.jl")
 include("junction_tree.jl")
+include("log_variable_elimination.jl")
 include("belief_propagation.jl")
 include("sampling.jl")
 include("compile.jl")

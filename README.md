@@ -32,6 +32,10 @@ with `BayesianNetworkFormats.jl` (file formats) and `EcologicalBayesianNetworks.
 - `variable_elimination` / `infer` with evidence, returning the posterior factor and `InferenceDiagnostics`
   (order used, largest intermediate factor, number of products, induced width); `joint_factor` and
   `brute_force_marginal` as the oracle every optimised path is tested against.
+- Opt-in `LogVariableElimination` uses centered log-domain factors and log-sum-exp.
+  `log_evidence_probability` retains tiny positive evidence masses that underflow in
+  ordinary arithmetic; `LogInferenceDiagnostics.mass_status` distinguishes that from
+  truly impossible evidence. The default backend is unchanged.
 - `JunctionTree` backend: the clique tree of the interaction graph from CliqueTrees.jl
   (`cliquetree(graph; alg, snd=Maximal())`, cached per factor-graph identity), calibrated by Shafer-Shenoy
   message passing; `all_marginals(fg; evidence)` (also on a `BayesModel`) and `clique_beliefs` from one
@@ -119,6 +123,18 @@ posterior(do_intervention(m, :GrazingPressure => :low), :Occupancy)   # P(Occupa
 s = ancestral_sample(m, 20_000)                       # AncestralSamples in topological order
 isapprox(empirical_marginal(s, :Occupancy), post; atol=0.02)     # true
 ```
+
+For rare evidence, select the log-domain backend explicitly:
+
+```julia
+post, diag = infer(m, :Occupancy; backend=LogVariableElimination())
+log_mass = log_evidence_probability(m; evidence=:Vegetation => :dense)
+```
+
+The backend returns Float64 posterior cells. A posterior cell that is itself
+unrepresentably small can still underflow; this is not a universal error bound.
+Empty queries retain the ordinary unnormalized-mass API, with the log mass in
+the diagnostics. Negative or nonfinite factor entries raise `LogFactorDomainError`.
 
 Factor level, building the factors by hand:
 

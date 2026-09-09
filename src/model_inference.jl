@@ -66,6 +66,12 @@ function infer(m::BayesModel, query::AbstractVector{Symbol};
 end
 infer(m::BayesModel, query::Symbol; kwargs...) = infer(m, [query]; kwargs...)
 
+function log_evidence_probability(m::BayesModel; evidence=Dict{Symbol,Symbol}(),
+                                  order::EliminationStrategy=MinFill(),
+                                  atol::Real=BayesianNetworks.DEFAULT_ATOL)
+    return log_evidence_probability(compile(m; atol); evidence=_model_evidence(m, evidence), order)
+end
+
 """
     all_marginals(m::BayesModel; evidence=Dict{Symbol,Symbol}(), backend=JunctionTree())
         -> Dict{Symbol,Factor}

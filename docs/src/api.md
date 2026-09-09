@@ -53,6 +53,11 @@ variable_elimination
 infer
 joint_factor
 brute_force_marginal
+LogVariableElimination
+LogInferenceDiagnostics
+LogFactorDomainError
+log_variable_elimination
+log_evidence_probability
 ```
 
 ## Junction trees
