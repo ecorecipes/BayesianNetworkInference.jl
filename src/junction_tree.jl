@@ -238,6 +238,33 @@ end
 # Sum out everything in the scope of `f` that is not in `keep`.
 _project(f::Factor, keep::Vector{Symbol}) = marginalize(f, setdiff(f.vars, keep))
 
+function _junction_tree_messages(jt, potentials::Vector{F}, separators, product, project) where {F}
+    n = length(jt)
+    up, down, beliefs = (Vector{F}(undef, n) for _ in 1:3)
+    n_messages = 0
+    for i in jt.postorder
+        jt.parent[i] == 0 && continue
+        incoming = F[potentials[i]]
+        append!(incoming, (up[k] for k in jt.children[i]))
+        up[i] = project(product(incoming), separators[i])
+        n_messages += 1
+    end
+    for i in Iterators.reverse(jt.postorder)
+        incoming = F[potentials[i]]
+        jt.parent[i] == 0 || push!(incoming, down[i])
+        append!(incoming, (up[k] for k in jt.children[i]))
+        beliefs[i] = product(copy(incoming))
+        for child in jt.children[i]
+            outgoing = F[potentials[i]]
+            jt.parent[i] == 0 || push!(outgoing, down[i])
+            append!(outgoing, (up[k] for k in jt.children[i] if k != child))
+            down[child] = project(product(outgoing), separators[child])
+            n_messages += 1
+        end
+    end
+    return beliefs, n_messages
+end
+
 """
     calibrate(fg::FactorGraph, jt=build_junction_tree(fg; order); evidence=Dict{Symbol,Symbol}(), order=MinFill())
         -> CalibratedJunctionTree
@@ -282,34 +309,7 @@ function calibrate(fg::FactorGraph{T}, jt::CompiledJunctionTree;
     end
     potentials = Factor{T}[_product!(lists[c]) for c in 1:n]
     seps = [Symbol[v for v in s if !haskey(ev, v)] for s in jt.separators]
-    # collect: messages towards the roots
-    up = Vector{Factor{T}}(undef, n)
-    n_messages = 0
-    for i in jt.postorder
-        jt.parent[i] == 0 && continue
-        fs = Factor{T}[potentials[i]]
-        for k in jt.children[i]
-            push!(fs, up[k])
-        end
-        up[i] = _project(_product!(fs), seps[i])
-        n_messages += 1
-    end
-    # distribute: messages away from the roots, and the beliefs
-    down = Vector{Factor{T}}(undef, n)
-    beliefs = Vector{Factor{T}}(undef, n)
-    for i in Iterators.reverse(jt.postorder)
-        incoming = Factor{T}[potentials[i]]
-        jt.parent[i] == 0 || push!(incoming, down[i])
-        for k in jt.children[i]
-            push!(incoming, up[k])
-        end
-        beliefs[i] = _product!(copy(incoming))
-        for k in jt.children[i]
-            fs = Factor{T}[f for f in incoming if f !== up[k]]
-            down[k] = _project(_product!(fs), seps[k])
-            n_messages += 1
-        end
-    end
+    beliefs, n_messages = _junction_tree_messages(jt, potentials, seps, _product!, _project)
     mass = constant.table[]
     for r in jt.roots
         mass *= sum(beliefs[r].table)
@@ -409,7 +409,11 @@ probability zero.
 """
 function clique_beliefs(fg::FactorGraph;
                         evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
-                        backend::JunctionTree=JunctionTree())
+                        backend::InferenceBackend=JunctionTree())
+    return _clique_beliefs(backend, fg, evidence)
+end
+
+function _clique_beliefs(backend::JunctionTree, fg::FactorGraph, evidence)
     cal = calibrate(fg, build_junction_tree(fg; order=backend.order); evidence)
     _require_evidence_mass(cal.evidence_probability, evidence)
     return map(normalize, cal.beliefs)

@@ -64,6 +64,10 @@ log_evidence_probability
 
 ```@docs
 JunctionTree
+LogJunctionTree
+LogCalibratedJunctionTree
+LogJunctionTreeDiagnostics
+log_calibrate
 CompiledJunctionTree
 build_junction_tree
 CalibratedJunctionTree

@@ -175,11 +175,14 @@ end
 """
     log_evidence_probability(fg; evidence=Dict{Symbol,Symbol}(), order=MinFill())
     log_evidence_probability(model::BayesModel; evidence=Dict(), order=MinFill(), atol=DEFAULT_ATOL)
+    log_evidence_probability(calibration::LogCalibratedJunctionTree)
 
 Return the log unnormalized evidence mass without exponentiating it. Exactly
 unsupported evidence gives `-Inf`; positive but unrepresentable ordinary mass
 has a finite log value. Model evidence is merged with explicit evidence as in
 `infer`; `atol` is the compilation/normalization tolerance, not a log cutoff.
+The calibration method reads the already-computed log mass without rerunning
+message passing.
 """
 function log_evidence_probability(fg::FactorGraph;
                                   evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),

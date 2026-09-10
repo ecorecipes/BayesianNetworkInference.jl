@@ -36,6 +36,11 @@ with `BayesianNetworkFormats.jl` (file formats) and `EcologicalBayesianNetworks.
   `log_evidence_probability` retains tiny positive evidence masses that underflow in
   ordinary arithmetic; `LogInferenceDiagnostics.mass_status` distinguishes that from
   truly impossible evidence. The default backend is unchanged.
+- `LogJunctionTree` applies the same log-domain arithmetic to the actual
+  collect/distribute message schedule. `all_marginals` uses one calibration,
+  including a global support check across disconnected components.
+  `log_calibrate` exposes log evidence and centered component beliefs; queries
+  spanning cliques report their log-VE fallback explicitly.
 - `JunctionTree` backend: the clique tree of the interaction graph from CliqueTrees.jl
   (`cliquetree(graph; alg, snd=Maximal())`, cached per factor-graph identity), calibrated by Shafer-Shenoy
   message passing; `all_marginals(fg; evidence)` (also on a `BayesModel`) and `clique_beliefs` from one
@@ -129,6 +134,7 @@ For rare evidence, select the log-domain backend explicitly:
 ```julia
 post, diag = infer(m, :Occupancy; backend=LogVariableElimination())
 log_mass = log_evidence_probability(m; evidence=:Vegetation => :dense)
+all_posteriors = all_marginals(m; backend=LogJunctionTree())
 ```
 
 The backend returns Float64 posterior cells. A posterior cell that is itself

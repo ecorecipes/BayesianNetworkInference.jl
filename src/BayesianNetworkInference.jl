@@ -91,6 +91,7 @@ export InferenceBackend, VariableElimination, InferenceDiagnostics, variable_eli
        LogInferenceDiagnostics, LogFactorDomainError, log_variable_elimination, log_evidence_probability
 # Junction trees and belief propagation
 export JunctionTree, CompiledJunctionTree, CalibratedJunctionTree, JunctionTreeDiagnostics,
+       LogJunctionTree, LogCalibratedJunctionTree, LogJunctionTreeDiagnostics, log_calibrate,
        build_junction_tree, calibrate, clique_beliefs, all_marginals, BeliefPropagation,
        BPDiagnostics, belief_propagation, is_tree
 # Sampling
@@ -113,6 +114,7 @@ include("orderings.jl")
 include("variable_elimination.jl")
 include("junction_tree.jl")
 include("log_variable_elimination.jl")
+include("log_junction_tree.jl")
 include("belief_propagation.jl")
 include("sampling.jl")
 include("compile.jl")
