@@ -90,6 +90,13 @@ factors to Float64. See the
 [certificate guide](https://ecorecipes.github.io/BayesianNetworks.jl/certificates/).
 No proof-assistant dependency is added to runtime inference.
 
+`trace_variable_elimination(model, query)` additionally captures the actual
+production VE inputs, conditioning, bucket products/reductions and returned
+result. It returns `(factor, diagnostics, trace)`; the trace is JSON-compatible
+data with explicit axes and raw binary64 cells. The independent workspace
+consumer checks it against exact factor replay. It may reject numerical drift,
+and starts after factor compilation rather than certifying that compiler.
+
 ## Installation
 
 The ecosystem packages are not registered. Install this package and its ecosystem

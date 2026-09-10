@@ -85,8 +85,13 @@ evidence variables, or a query variable that also carries evidence.
 function variable_elimination(fg::FactorGraph{T}, query::AbstractVector{Symbol};
                               evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
                               order::EliminationStrategy=MinFill()) where {T}
+    return _variable_elimination(fg, query, evidence, order, nothing)
+end
+
+function _variable_elimination(fg::FactorGraph{T}, query, evidence, order, observer) where {T}
     _check_query(fg, query, evidence)
     factors = Factor{T}[condition(f, evidence) for f in fg.factors]
+    observer === nothing || observer(:conditioned, factors)
     vars = _variables(factors)
     graph, vars, index = _interaction_graph(factors, vars)
     elim = _elimination_order(graph, vars, index, _restrict(order, evidence), query)
@@ -103,7 +108,12 @@ function variable_elimination(fg::FactorGraph{T}, query::AbstractVector{Symbol};
         n_mult += max(length(touching) - 1, 0)
         max_size = max(max_size, length(prod))
         width = max(width, ndims(prod) - 1)
-        push!(rest, marginalize(prod, v))
+        reduced = marginalize(prod, v)
+        if observer !== nothing
+            indices = findall(f -> v in f.vars, factors)
+            observer(:bucket, (variable=v, inputs=indices, product=prod, result=reduced))
+        end
+        push!(rest, reduced)
         factors = rest
     end
     result = _product!(factors)
@@ -111,7 +121,9 @@ function variable_elimination(fg::FactorGraph{T}, query::AbstractVector{Symbol};
     max_size = max(max_size, length(result))
     width = max(width, ndims(result) - 1)
     result = reorder(result, query)
+    observer === nothing || observer(:final_product, result)
     isempty(query) || (result = normalize(result))
+    observer === nothing || observer(:result, result)
     return result, InferenceDiagnostics(elim, max_size, n_mult, width)
 end
 function variable_elimination(fg::FactorGraph, query::Symbol; kwargs...)

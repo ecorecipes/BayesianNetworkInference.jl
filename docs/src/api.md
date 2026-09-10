@@ -58,6 +58,7 @@ LogInferenceDiagnostics
 LogFactorDomainError
 log_variable_elimination
 log_evidence_probability
+trace_variable_elimination
 ```
 
 ## Junction trees
