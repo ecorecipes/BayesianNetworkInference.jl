@@ -81,6 +81,11 @@ function _elimination_order(graph::SimpleGraph, vars::Vector{Symbol},
     keep_idx = _keep_indices(:elimination_order, index, keep)
     isempty(vars) && return Symbol[]
     order = _permutation(graph, keep_idx, strategy)
+    order isa AbstractVector{<:Integer} && length(order) == length(vars) &&
+        all(i -> !(i isa Bool), order) && isperm(order) ||
+        throw(ScopeError(:elimination_order,
+                         "ordering strategy did not return a permutation of the graph vertices",
+                         copy(vars)))
     # CompositeRotations was verified to place the kept vertices last; the
     # filter below makes the result independent of that guarantee.
     keepset = Set(keep_idx)
@@ -124,7 +129,9 @@ function _elimination_order(graph::SimpleGraph, vars::Vector{Symbol},
                             index::Dict{Symbol,Int}, strategy::UserOrder, keep)
     _keep_indices(:elimination_order, index, keep)
     keepset = Set(keep)
-    order = strategy.vars
+    order = copy(strategy.vars)
+    allunique(order) ||
+        throw(ScopeError(:elimination_order, "elimination order repeats variables", order))
     bad = [v for v in order if !haskey(index, v)]
     isempty(bad) ||
         throw(ScopeError(:elimination_order, "user order names unknown variables", bad))
@@ -134,7 +141,7 @@ function _elimination_order(graph::SimpleGraph, vars::Vector{Symbol},
     absent = [v for v in vars if !(v in keepset) && !(v in order)]
     isempty(absent) ||
         throw(ScopeError(:elimination_order, "user order omits variables", absent))
-    return copy(order)
+    return order
 end
 
 """
@@ -143,9 +150,10 @@ end
 The variables of `fg` in the order in which `strategy` eliminates them,
 excluding `keep` (the query variables, which are forced to the end of the
 underlying `CliqueTrees.permutation` through `CompositeRotations(keep, alg)`
-and then dropped). Throws [`ScopeError`](@ref) if `keep` names unknown or
-repeated variables, or if a [`UserOrder`](@ref) is not a permutation of the
-remaining variables.
+and then dropped). The returned graph-vertex permutation is checked before
+mapping it to variable names. Throws [`ScopeError`](@ref) if a strategy returns
+an invalid permutation, if `keep` names unknown or repeated variables, or if a
+[`UserOrder`](@ref) is not a permutation of the remaining variables.
 """
 function elimination_order(fg::FactorGraph, strategy::EliminationStrategy=MinFill();
                            keep::AbstractVector{Symbol}=Symbol[])

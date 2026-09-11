@@ -1,3 +1,9 @@
+struct TestVertexPermutation{T} <: EliminationStrategy
+    indices::T
+end
+BayesianNetworkInference._permutation(::Graphs.SimpleGraph, ::Vector{Int},
+                                      order::TestVertexPermutation) = order.indices
+
 @testset "factor graphs and orderings" begin
     kernels, order, parents = asia_network()
     fg = factor_graph_from(kernels, parents)
@@ -65,6 +71,22 @@
                                                   keep=[:dysp])
         @test_throws ScopeError elimination_order(fg, UserOrder(vcat(o, :zzz));
                                                   keep=[:dysp])
+        mutated = UserOrder(vcat(o, :dysp))
+        push!(mutated.vars, first(mutated.vars))
+        @test_throws ScopeError elimination_order(fg, mutated)
+        @test_throws ScopeError treewidth(fg, mutated)
+    end
+
+    @testset "strategy permutations are checked before variable lookup" begin
+        n = length(variables(fg))
+        for invalid in ([1:(n - 1);], fill(1, n), [0; 2:n],
+                        [1:(n - 1); n + 1], fill(true, n), Float64.(1:n))
+            @test_throws ScopeError elimination_order(fg, TestVertexPermutation(invalid))
+        end
+        order = reverse(collect(1:n))
+        @test elimination_order(fg, TestVertexPermutation(order)) == reverse(variables(fg))
+        @test elimination_order(fg, TestVertexPermutation(order); keep=[:dysp]) ==
+              filter(!=(:dysp), reverse(variables(fg)))
     end
 
     @testset "treewidth" begin
