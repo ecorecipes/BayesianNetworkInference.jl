@@ -1,8 +1,10 @@
 struct TestVertexPermutation{T} <: EliminationStrategy
     indices::T
 end
-BayesianNetworkInference._permutation(::Graphs.SimpleGraph, ::Vector{Int},
-                                      order::TestVertexPermutation) = order.indices
+function BayesianNetworkInference._permutation(::Graphs.SimpleGraph, ::Vector{Int},
+                                               order::TestVertexPermutation)
+    return order.indices
+end
 
 @testset "factor graphs and orderings" begin
     kernels, order, parents = asia_network()

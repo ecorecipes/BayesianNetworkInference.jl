@@ -97,13 +97,15 @@ function log_calibrate(fg::FactorGraph, jt::CompiledJunctionTree;
     end
     potentials = _LogFactor[_log_product(items) for items in lists]
     separators = [Symbol[v for v in scope if !haskey(ev, v)] for scope in jt.separators]
-    beliefs, count = _junction_tree_messages(jt, potentials, separators, _log_product, _log_project)
+    beliefs, count = _junction_tree_messages(jt, potentials, separators, _log_product,
+                                             _log_project)
     masses = [_log_mass(constant); [_log_mass(beliefs[root]) for root in jt.roots]]
     log_mass = any(==(-Inf), masses) ? -Inf : sum(masses)
     return LogCalibratedJunctionTree(jt, ev, potentials, beliefs, log_mass, count)
 end
 
-function log_calibrate(fg::FactorGraph; evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
+function log_calibrate(fg::FactorGraph;
+                       evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
                        order::EliminationStrategy=MinFill())
     return log_calibrate(fg, build_junction_tree(fg; order); evidence)
 end
@@ -133,13 +135,15 @@ function _infer(backend::LogJunctionTree, fg::FactorGraph, query, evidence)
     if !isempty(query) && clique === nothing
         @warn "LogJunctionTree: the query $(collect(query)) does not lie in one clique; falling back to log-domain variable elimination"
         result, info = log_variable_elimination(fg, query; evidence, order=backend.order)
-        return result, LogJunctionTreeDiagnostics(0, length(tree), tree.treewidth,
-                                                 info.max_factor_size, 0, true,
-                                                 info.log_evidence_probability, info.mass_status)
+        return result,
+               LogJunctionTreeDiagnostics(0, length(tree), tree.treewidth,
+                                          info.max_factor_size, 0, true,
+                                          info.log_evidence_probability, info.mass_status)
     end
     cal = log_calibrate(fg, tree; evidence)
     if isempty(query)
-        return _factor(Symbol[], FiniteAxis[], fill(exp(cal.log_evidence_probability))), _diagnostics(cal, 0)
+        return _factor(Symbol[], FiniteAxis[], fill(exp(cal.log_evidence_probability))),
+               _diagnostics(cal, 0)
     end
     cal.log_evidence_probability == -Inf && _require_evidence_mass(0.0, evidence)
     return _log_belief_marginal(cal.beliefs[clique], query), _diagnostics(cal, clique)
@@ -148,10 +152,12 @@ end
 function _all_marginals(backend::LogJunctionTree, fg::FactorGraph, evidence)
     cal = log_calibrate(fg; evidence, order=backend.order)
     cal.log_evidence_probability == -Inf && _require_evidence_mass(0.0, evidence)
-    return Dict{Symbol,Factor{Float64}}(
-        variable => haskey(evidence, variable) ? _point_mass(Float64, axis, evidence[variable]) :
-                    _log_belief_marginal(cal.beliefs[cal.tree.home[variable]], [variable])
-        for (variable, axis) in fg.axes)
+    return Dict{Symbol,Factor{Float64}}(variable => haskey(evidence, variable) ?
+                                                    _point_mass(Float64, axis,
+                                                                evidence[variable]) :
+                                                    _log_belief_marginal(cal.beliefs[cal.tree.home[variable]],
+                                                                         [variable])
+                                        for (variable, axis) in fg.axes)
 end
 
 function _clique_beliefs(backend::LogJunctionTree, fg::FactorGraph, evidence)

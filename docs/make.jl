@@ -64,5 +64,5 @@ makedocs(;
          pages=pages)
 
 "--no-deploy" in ARGS || deploydocs(;
-           repo="github.com/ecorecipes/BayesianNetworkInference.jl.git",
-           devbranch="main")
+                                    repo="github.com/ecorecipes/BayesianNetworkInference.jl.git",
+                                    devbranch="main")

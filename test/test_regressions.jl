@@ -113,7 +113,7 @@ end
     @test posterior(m, :X; atol=1e-6)[:yes] ≈ expected[1]
     @test length(ancestral_sample(m, 3; rng=MersenneTwister(3), atol=1e-6)) == 3
     @test isfinite(entropy(m, :X; atol=1e-6))
-    @test mutual_information(m, :X, :Y; atol=1e-6) ≈ 0 atol=1e-12
+    @test mutual_information(m, :X, :Y; atol=1e-6) ≈ 0 atol = 1e-12
     @test length(sensitivity(m, :X; atol=1e-6)) == 1
     @test length(tornado(m, :X, :yes; atol=1e-6)) == 1
     cases = [Dict(:X => :yes, :Y => :yes), Dict(:X => :no, :Y => :no)]

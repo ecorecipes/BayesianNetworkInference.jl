@@ -9,7 +9,9 @@ The ordinary [`VariableElimination`](@ref) backend remains the default.
 struct LogVariableElimination{O<:EliminationStrategy} <: InferenceBackend
     order::O
 end
-LogVariableElimination(; order::EliminationStrategy=MinFill()) = LogVariableElimination(order)
+function LogVariableElimination(; order::EliminationStrategy=MinFill())
+    return LogVariableElimination(order)
+end
 
 """
     LogFactorDomainError(vars, index, value)
@@ -81,7 +83,8 @@ function _log_multiply(left::_LogFactor, right::_LogFactor)
     vars, axes = _union_axes(left.factor, right.factor, :log_multiply)
     shape = Tuple(length(axis) for axis in axes)
     table = Array{Float64}(undef, shape)
-    table .= _broadcastable(left.factor, vars, shape) .+ _broadcastable(right.factor, vars, shape)
+    table .= _broadcastable(left.factor, vars, shape) .+
+             _broadcastable(right.factor, vars, shape)
     return _center_log(_factor(vars, axes, table), left.log_scale + right.log_scale)
 end
 
@@ -99,16 +102,22 @@ function _log_sum_out(source::_LogFactor, variable::Symbol)
     table = Array{Float64}(undef, shape)
     for index in CartesianIndices(table)
         coordinates = Tuple(index)
-        full(state) = ntuple(i -> i == position ? state : coordinates[i < position ? i : i - 1], ndims(factor))
-        peak = maximum(factor.table[full(state)...] for state in 1:size(factor.table, position))
+        function full(state)
+            return ntuple(i -> i == position ? state : coordinates[i < position ? i : i - 1],
+                          ndims(factor))
+        end
+        peak = maximum(factor.table[full(state)...]
+                       for state in 1:size(factor.table, position))
         if peak == -Inf
             table[index] = -Inf
         else
-            total = sum(exp(factor.table[full(state)...] - peak) for state in 1:size(factor.table, position))
+            total = sum(exp(factor.table[full(state)...] - peak)
+                        for state in 1:size(factor.table, position))
             table[index] = peak + log(total)
         end
     end
-    return _center_log(_factor(factor.vars[keep], factor.axes[keep], table), source.log_scale)
+    return _center_log(_factor(factor.vars[keep], factor.axes[keep], table),
+                       source.log_scale)
 end
 
 function _log_eliminate(fg::FactorGraph, query, evidence, order)
@@ -125,7 +134,8 @@ function _log_eliminate(fg::FactorGraph, query, evidence, order)
     largest, multiplications, width = 0, 0, 0
     for variable in elimination
         touched = _LogFactor[factor for factor in factors if variable in factor.factor.vars]
-        factors = _LogFactor[factor for factor in factors if !(variable in factor.factor.vars)]
+        factors = _LogFactor[factor
+                             for factor in factors if !(variable in factor.factor.vars)]
         product = _log_product(touched)
         largest = max(largest, length(product.factor))
         width = max(width, ndims(product.factor) - 1)
@@ -140,9 +150,11 @@ function _log_eliminate(fg::FactorGraph, query, evidence, order)
     total = sum(exp, result.factor.table)
     log_mass = iszero(total) ? -Inf : result.log_scale + log(total)
     mass = exp(log_mass)
-    status = log_mass == -Inf ? :zero : iszero(mass) ? :underflow : isinf(mass) ? :overflow : :finite
-    return result, total, LogInferenceDiagnostics(elimination, largest, multiplications,
-                                                 width, log_mass, status)
+    status = log_mass == -Inf ? :zero :
+             iszero(mass) ? :underflow : isinf(mass) ? :overflow : :finite
+    return result, total,
+           LogInferenceDiagnostics(elimination, largest, multiplications,
+                                   width, log_mass, status)
 end
 
 """
@@ -160,13 +172,16 @@ function log_variable_elimination(fg::FactorGraph, query::AbstractVector{Symbol}
                                   order::EliminationStrategy=MinFill())
     result, total, diagnostics = _log_eliminate(fg, query, evidence, order)
     if isempty(query)
-        return _factor(Symbol[], FiniteAxis[], fill(exp(diagnostics.log_evidence_probability))), diagnostics
+        return _factor(Symbol[], FiniteAxis[],
+                       fill(exp(diagnostics.log_evidence_probability))), diagnostics
     end
     diagnostics.mass_status == :zero && _require_evidence_mass(0.0, evidence)
-    return _factor(result.factor.vars, result.factor.axes, exp.(result.factor.table) ./ total), diagnostics
+    return _factor(result.factor.vars, result.factor.axes,
+                   exp.(result.factor.table) ./ total), diagnostics
 end
-log_variable_elimination(fg::FactorGraph, query::Symbol; kwargs...) =
-    log_variable_elimination(fg, [query]; kwargs...)
+function log_variable_elimination(fg::FactorGraph, query::Symbol; kwargs...)
+    return log_variable_elimination(fg, [query]; kwargs...)
+end
 
 function _infer(backend::LogVariableElimination, fg::FactorGraph, query, evidence)
     return log_variable_elimination(fg, query; evidence, order=backend.order)
@@ -195,8 +210,10 @@ function _all_marginals(backend::LogVariableElimination, fg::FactorGraph, eviden
         _require_evidence_mass(0.0, evidence)
     result = Dict{Symbol,Factor{Float64}}()
     for (variable, axis) in fg.axes
-        result[variable] = haskey(evidence, variable) ? _point_mass(Float64, axis, evidence[variable]) :
-                           first(log_variable_elimination(fg, [variable]; evidence, order=backend.order))
+        result[variable] = haskey(evidence, variable) ?
+                           _point_mass(Float64, axis, evidence[variable]) :
+                           first(log_variable_elimination(fg, [variable]; evidence,
+                                                          order=backend.order))
     end
     return result
 end

@@ -69,7 +69,8 @@ infer(m::BayesModel, query::Symbol; kwargs...) = infer(m, [query]; kwargs...)
 function log_evidence_probability(m::BayesModel; evidence=Dict{Symbol,Symbol}(),
                                   order::EliminationStrategy=MinFill(),
                                   atol::Real=BayesianNetworks.DEFAULT_ATOL)
-    return log_evidence_probability(compile(m; atol); evidence=_model_evidence(m, evidence), order)
+    return log_evidence_probability(compile(m; atol); evidence=_model_evidence(m, evidence),
+                                    order)
 end
 
 """

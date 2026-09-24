@@ -51,6 +51,36 @@ jobs:
       - uses: julia-actions/julia-runtest@v1
         with:
           project: BayesianNetworkInference.jl
+  format:
+    name: Formatter check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - name: Check formatting against .JuliaFormatter.toml
+        run: |
+          julia -e '
+            using Pkg
+            Pkg.activate(; temp=true)
+            Pkg.add("JuliaFormatter")
+            using JuliaFormatter
+            bad = String[]
+            for (root, _, files) in walkdir(".")
+                occursin("/.", root) && continue
+                for f in files
+                    endswith(f, ".jl") || continue
+                    path = joinpath(root, f)
+                    format_file(path; overwrite=false) || push!(bad, path)
+                end
+            end
+            if !isempty(bad)
+                println("These files are not formatted; run JuliaFormatter.format(\".\"):")
+                foreach(x -> println("  ", x), bad)
+                exit(1)
+            end
+            println("all files formatted")'
   vignette-sync:
     name: Vignette sync check
     runs-on: ubuntu-latest

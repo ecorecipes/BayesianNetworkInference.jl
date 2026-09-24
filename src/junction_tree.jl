@@ -238,7 +238,8 @@ end
 # Sum out everything in the scope of `f` that is not in `keep`.
 _project(f::Factor, keep::Vector{Symbol}) = marginalize(f, setdiff(f.vars, keep))
 
-function _junction_tree_messages(jt, potentials::Vector{F}, separators, product, project) where {F}
+function _junction_tree_messages(jt, potentials::Vector{F}, separators, product,
+                                 project) where {F}
     n = length(jt)
     up, down, beliefs = (Vector{F}(undef, n) for _ in 1:3)
     n_messages = 0

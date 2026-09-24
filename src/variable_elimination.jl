@@ -88,7 +88,8 @@ function variable_elimination(fg::FactorGraph{T}, query::AbstractVector{Symbol};
     return _variable_elimination(fg, query, evidence, order, nothing)
 end
 
-function _variable_elimination(fg::FactorGraph{T}, query, evidence, order, observer) where {T}
+function _variable_elimination(fg::FactorGraph{T}, query, evidence, order,
+                               observer) where {T}
     _check_query(fg, query, evidence)
     factors = Factor{T}[condition(f, evidence) for f in fg.factors]
     observer === nothing || observer(:conditioned, factors)

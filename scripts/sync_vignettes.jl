@@ -33,7 +33,7 @@ here keeps both layouts correct: the committed vignettes stay browsable on GitHu
 Documenter resolves the cross-references.
 """
 function rewrite_sibling_links(text::AbstractString)
-    replace(text, r"\]\(\.\./(\d+_[A-Za-z0-9_]+)/\1\.(md|qmd)\)" => s"](\1.md)")
+    return replace(text, r"\]\(\.\./(\d+_[A-Za-z0-9_]+)/\1\.(md|qmd)\)" => s"](\1.md)")
 end
 
 stale = String[]
