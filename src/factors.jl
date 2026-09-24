@@ -323,7 +323,12 @@ function normalize(f::Factor)
     iszero(s) &&
         throw(KernelNormalizationError("cannot normalise a factor over $(f.vars) with zero total mass",
                                        1.0, 0.0))
-    return _factor(f.vars, f.axes, f.table ./ s)
+    # `f.table ./ s` returns a *scalar* for an empty scope, where the table is a 0-d array,
+    # so divide in place: an empty-scope factor arises from any maximal clique that evidence
+    # fully instantiates. The log-domain path already does this.
+    table = similar(f.table, typeof(one(eltype(f.table)) / s))
+    table .= f.table ./ s
+    return _factor(f.vars, f.axes, table)
 end
 
 """

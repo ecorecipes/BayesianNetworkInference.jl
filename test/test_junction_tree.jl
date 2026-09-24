@@ -307,3 +307,21 @@ end
         end
     end
 end
+
+@testset "clique_beliefs survives a fully instantiated clique" begin
+    # Evidence that instantiates every variable of a maximal clique leaves an empty-scope
+    # factor, whose table is a 0-d array. `f.table ./ s` returns a *scalar* there, so
+    # `normalize` raised a `MethodError` from inside `clique_beliefs` on ordinary evidence.
+    # [:either, :xray] is a maximal MinFill clique of asia. The log-domain path always
+    # divided in place and so was unaffected.
+    kernels, _, parents = asia_network()
+    fg = factor_graph_from(kernels, parents)
+    beliefs = clique_beliefs(fg; evidence=Dict(:either => :yes, :xray => :yes))
+    @test length(beliefs) == 6
+    @test all(b -> isapprox(sum(b.table), 1.0; atol=1e-10), values(beliefs))
+
+    empty_scope = marginalize(Factor(FiniteAxis(:a, [:x, :y]), [0.25, 0.75]), [:a])
+    @test isempty(scope(empty_scope))
+    @test normalize(empty_scope).table == fill(1.0)
+    @test normalize(empty_scope).table isa AbstractArray{Float64,0}
+end
