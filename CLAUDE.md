@@ -7,8 +7,11 @@ Exact and approximate inference for compositional Bayesian networks: factor alge
 Dependency order (arrows = depends on):
 EcologicalBayesianNetworks → InfluenceDiagrams → BayesianNetworkInference → BayesianNetworks →
 FiniteKernels, and BayesianNetworks → BayesianNetworkFormats.
-This package depends on: BayesianNetworks, FiniteKernels and Graphs (BayesianNetworkFormats
-only as a test/docs/vignette dependency, for `fixture_path`). It has no Catlab in its
+This package depends on: BayesianNetworks, FiniteKernels, Graphs, CliqueTrees, AMD and
+TreeWidthSolver (all hard dependencies -- AMD and TreeWidthSolver back the `AMDOrder` and
+`ExactTreewidth` strategies and are `import`ed, not optional), plus SparseArrays, LinearAlgebra,
+Random and Statistics from the standard library. BayesianNetworkFormats is only a
+test/docs/vignette dependency, for `fixture_path`. It has no Catlab in its
 dependency graph since ADR 0009: `MarkovCategories` was dropped when `evaluate` became this
 package's own function. Sibling packages are expected at `../<Name>.jl` (see `[sources]` in Project.toml,
 `vignettes/Project.toml` and `docs/Project.toml`; the CI jobs check all three siblings out).
@@ -60,6 +63,20 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   `permutation(graph; alg=CompositeRotations(keep_idx, alg))`, `treewidth(fg, strategy)`.
 - `src/variable_elimination.jl`: `VariableElimination` backend, `InferenceDiagnostics`, `variable_elimination`,
   `infer`, oracle `joint_factor` / `brute_force_marginal`.
+- `src/log_variable_elimination.jl`: `LogVariableElimination` backend,
+  `LogInferenceDiagnostics`, `LogFactorDomainError`, `log_variable_elimination`,
+  `log_evidence_probability`. The same elimination algorithm as `variable_elimination.jl`
+  carried out in the log domain, for models whose joint underflows Float64. Keep the two in
+  step: they are written out twice, and a fix applied to one and not the other is how
+  `normalize`'s empty-scope bug came about.
+- `src/log_junction_tree.jl`: `LogJunctionTree`, `LogCalibratedJunctionTree`,
+  `LogJunctionTreeDiagnostics`, `log_calibrate`. The log-domain counterpart of
+  `junction_tree.jl`, with the same caveat.
+- `src/execution_trace.jl`: `trace_variable_elimination`, which records each product and
+  marginalisation of a run as data for the external conformance checker. The trace's
+  `inputs` are in factor-graph order, which is *not* the association order of the recorded
+  product (`_product!` sorts `touching` by `ndims` first); the format does not record that
+  order, and ADR 0011 notes that reassociation alone changes the answer.
 - `src/junction_tree.jl`: `JunctionTree(; order)` backend, `CompiledJunctionTree` from
   `CliqueTrees.cliquetree(graph; alg, snd=Maximal())` (`residual`/`separator`, `parentindex`/`childindices`/
   `rootindices`; cliques are numbered in the permuted order, `label[v]` maps back), cached in a `Dict` keyed by
@@ -106,7 +123,11 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   (hand-computed Brier / log / spherical scores on an enumerable two-variable network, scores against
   brute-force enumeration on random DAGs, calibrated and miscalibrated synthetic generators, AUC 1.0 and
   0.5, split invariants); `test/test_sensitivity.jl` (zero mutual information for d-separated variables,
-  the entropy-reduction identity on a chain).
+  the entropy-reduction identity on a chain); `test/test_log_inference.jl` and
+  `test/test_log_junction_tree.jl` (the log-domain backends against their linear counterparts,
+  and on models whose joint underflows Float64); `test/test_execution_trace.jl`;
+  `test/test_regressions.jl` (the ADR 0011 suite: the obstructions that composition and
+  reassociation are known to have, pinned so they cannot be quietly "fixed").
 - `vignettes/`: 01 factors and VE (ends with the model-level Demo 1: `.dne` -> `infer` -> `do` -> `.xdsl`),
   02 orderings, 03 sampling and Monte Carlo checks, 04 junction trees and belief propagation,
   05 validation and scoring (simulate cases, grouped holdout, calibration, prior baseline, mutual information).
