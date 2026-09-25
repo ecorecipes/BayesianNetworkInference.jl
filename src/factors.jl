@@ -226,12 +226,56 @@ variables of `g` not already present, so multiplication is commutative modulo
 axis order. Shared variables must carry identical axes ([`ShapeError`](@ref)
 otherwise). The element type is the promotion of the two element types.
 """
+# Stride of each result axis inside `h`'s table, zero where `h` lacks that variable, so
+# that a linear walk over the result can index `h` without permuting or reshaping it.
+# `vec` of a table whose rank is not known statically is still a `Vector`, so the kernel
+# below is type stable where broadcasting over an `Array{T}` of unknown rank is not --
+# the same reason `BayesianNetworks`' `_Factor` carries explicit strides.
+function _result_strides(h::Factor, vars::Vector{Symbol})
+    own = Vector{Int}(undef, length(h.vars))
+    acc = 1
+    for k in eachindex(h.vars)
+        own[k] = acc
+        acc *= length(h.axes[k])
+    end
+    out = zeros(Int, length(vars))
+    for (i, v) in enumerate(vars)
+        k = findfirst(==(v), h.vars)
+        k === nothing || (out[i] = own[k])
+    end
+    return out
+end
+
+# out[i] = a[.] * b[.] over the result's joint states, walking an odometer over `sz`.
+function _product_into!(out::Vector{T}, sz::Vector{Int}, a::Vector{S}, as::Vector{Int},
+                        b::Vector{U}, bs::Vector{Int}) where {T,S,U}
+    d = length(sz)
+    pos = zeros(Int, d)
+    ai = 1
+    bi = 1
+    @inbounds for i in eachindex(out)
+        out[i] = a[ai] * b[bi]
+        for k in 1:d
+            pos[k] += 1
+            ai += as[k]
+            bi += bs[k]
+            pos[k] < sz[k] && break
+            pos[k] = 0
+            ai -= as[k] * sz[k]
+            bi -= bs[k] * sz[k]
+        end
+    end
+    return out
+end
+
 function multiply(f::Factor{S}, g::Factor{U}) where {S,U}
     vars, axes = _union_axes(f, g, :multiply)
-    sz = Tuple(map(length, axes))
+    sz = Int[length(a) for a in axes]
     T = promote_type(S, U)
-    table = Array{T}(undef, sz)
-    table .= _broadcastable(f, vars, sz) .* _broadcastable(g, vars, sz)
+    table = Array{T}(undef, Tuple(sz))
+    isempty(table) ||
+        _product_into!(vec(table), sz, vec(f.table), _result_strides(f, vars),
+                       vec(g.table), _result_strides(g, vars))
     return _factor(vars, axes, table)
 end
 multiply(f::Factor) = f

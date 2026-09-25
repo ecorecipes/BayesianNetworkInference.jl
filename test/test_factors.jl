@@ -147,3 +147,45 @@
         @test_throws ShapeError Factor(kj, [:A], :B)
     end
 end
+
+@testset "multiply matches an independent reference on random scopes" begin
+    # `multiply` walks the result linearly with precomputed strides rather than
+    # broadcasting reshaped views, because `f.table` has no statically known rank. The
+    # reference below indexes through CartesianIndices instead, so it shares no code with
+    # the implementation and would catch a stride or axis-order error.
+    function reference_multiply(f, g)
+        vars = copy(f.vars)
+        axes = copy(f.axes)
+        for (v, a) in zip(g.vars, g.axes)
+            v in vars || (push!(vars, v); push!(axes, a))
+        end
+        sz = Tuple(length(a) for a in axes)
+        out = zeros(Float64, sz)
+        for ci in CartesianIndices(sz)
+            fi = CartesianIndex(Tuple(ci[findfirst(==(v), vars)] for v in f.vars))
+            gi = CartesianIndex(Tuple(ci[findfirst(==(v), vars)] for v in g.vars))
+            out[ci] = f.table[fi] * g.table[gi]
+        end
+        return vars, out
+    end
+
+    rng = MersenneTwister(3)
+    names = [:A, :B, :C, :D]
+    compared = 0
+    for _ in 1:400
+        card = Dict(n => rand(rng, 2:4) for n in names)
+        fv = sort(randsubseq(rng, names, 0.6))
+        gv = sort(randsubseq(rng, names, 0.6))
+        (isempty(fv) || isempty(gv)) && continue
+        mk(vs) = [FiniteAxis(v, [Symbol(v, i) for i in 1:card[v]]) for v in vs]
+        fa, ga = mk(fv), mk(gv)
+        f = Factor(fa, rand(rng, Tuple(length(a) for a in fa)...))
+        g = Factor(ga, rand(rng, Tuple(length(a) for a in ga)...))
+        want_vars, want_table = reference_multiply(f, g)
+        got = multiply(f, g)
+        @test got.vars == want_vars
+        @test got.table ≈ want_table
+        compared += 1
+    end
+    @test compared >= 300
+end
