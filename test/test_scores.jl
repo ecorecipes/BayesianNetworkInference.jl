@@ -143,10 +143,32 @@ end
             @test 0 <= brier_score(p) <= 2
             @test 0 <= spherical_score(p) <= 1
             @test log_score(p) <= 0
-            # a proper score cannot be improved by ignoring the parents on
-            # data drawn from the model itself (in expectation; 40 draws are
-            # enough only for the weak statement that both are finite)
             @test isfinite(brier_score(baseline(fg, cs, target)))
+        end
+    end
+
+    @testset "proper scores prefer the model to the prior" begin
+        # The check above promised that a proper score cannot be improved by ignoring the
+        # parents, but asserted only that both numbers are finite -- 40 draws are far too
+        # few for the real statement. It holds in expectation on data drawn from the model,
+        # so make the sample large enough to assert it: a strictly proper score is
+        # maximised by the true conditional distribution, and the prior baseline is not it
+        # unless the target is independent of the evidence.
+        rng = MersenneTwister(7)
+        for _ in 1:5
+            kernels, order, parents = random_dag_network(rng; n=4)
+            fg = factor_graph_from(kernels, parents)
+            target = last(order)
+            cs = Cases(ancestral_sample(kernels, order, parents, 4000; rng))
+            p = predict(fg, cs, target)
+            b = baseline(fg, cs, target)
+            # Brier is negatively oriented, log and spherical positively.
+            mi = mutual_information(fg, target, first(order))
+            if mi > 0.01                      # skip the near-independent draws
+                @test brier_score(p) <= brier_score(b)
+                @test log_score(p) >= log_score(b)
+                @test spherical_score(p) >= spherical_score(b)
+            end
         end
     end
 

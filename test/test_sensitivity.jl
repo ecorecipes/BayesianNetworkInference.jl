@@ -77,11 +77,34 @@
         @test first(s).variable == :HabitatQuality
         @test s[2].variable == :Vegetation
         h = entropy(m, :Occupancy)
+        # `sensitivity` builds each row by calling `mutual_information` and dividing by the
+        # entropy, so comparing a row against those functions restates the implementation.
+        # Compare against the full joint instead, summed by hand from `joint_factor`, which
+        # is the oracle variable elimination itself is tested against.
+        fgm = compile(m)
+        full = joint_factor(fgm)
+        function mi_from_joint(a::Symbol, b::Symbol; base=2)
+            pab = reorder(marginalize(full, setdiff(scope(full), [a, b])), [a, b])
+            pa = marginalize(pab, [b]).table
+            pb = marginalize(pab, [a]).table
+            total = 0.0
+            for i in axes(pab.table, 1), j in axes(pab.table, 2)
+                p = pab.table[i, j]
+                p > 0 && (total += p * log(p / (pa[i] * pb[j])))
+            end
+            return total / log(base)
+        end
         for r in s
-            @test r.mutual_information ≈ mutual_information(m, :Occupancy, r.variable)
-            @test r.entropy_reduction ≈ r.mutual_information / h
+            @test isapprox(r.mutual_information, mi_from_joint(:Occupancy, r.variable);
+                           atol=1e-10)
+            @test isapprox(r.entropy_reduction, r.mutual_information / h; atol=1e-12)
             @test 0 <= r.entropy_reduction <= 1
         end
+        # Mutual information is symmetric and vanishes exactly for independent variables:
+        # two properties of the quantity, not of how it is computed here.
+        @test isapprox(mutual_information(m, :Occupancy, :Climate),
+                       mutual_information(m, :Climate, :Occupancy); atol=1e-12)
+        @test isapprox(mutual_information(m, :Climate, :GrazingPressure), 0; atol=1e-12)
         # evidence removes a variable from the ranking and can d-separate others
         se = sensitivity(m, :Occupancy; evidence=Dict(:HabitatQuality => :good))
         @test !any(r -> r.variable == :HabitatQuality, se)
