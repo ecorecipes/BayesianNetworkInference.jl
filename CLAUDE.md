@@ -130,7 +130,10 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   reassociation are known to have, pinned so they cannot be quietly "fixed").
 - `vignettes/`: 01 factors and VE (ends with the model-level Demo 1: `.dne` -> `infer` -> `do` -> `.xdsl`),
   02 orderings, 03 sampling and Monte Carlo checks, 04 junction trees and belief propagation,
-  05 validation and scoring (simulate cases, grouped holdout, calibration, prior baseline, mutual information).
+  05 validation and scoring (simulate cases, grouped holdout, calibration, prior baseline, mutual information),
+  06 inference in the log domain (a 340-site chain whose evidence mass underflows: the default backend
+  drifts at 320 sites and raises at 340, `LogVariableElimination` returns the closed-form posterior
+  throughout, and `log_evidence_probability` separates rare from impossible).
 - Later milestones: `ext/` adapters for external backends.
 
 ## Formal correspondence
