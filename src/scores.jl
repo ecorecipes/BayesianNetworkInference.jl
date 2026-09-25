@@ -407,6 +407,15 @@ has `observed ≈ predicted` in every populated bin.
 
 The [`Predictions`](@ref) method scores the one-versus-rest event
 `target == state`.
+
+Bins are left-open and right-closed -- `p` falls in bin `ceil(p * bins)` -- with
+`p == 0` placed in the first bin, so a probability exactly on an interior edge belongs
+to the *lower* bin. (scikit-learn's `calibration_curve` uses the opposite,
+right-open convention, so bin membership on an edge differs from it.) Note that
+`0.3 * 10 == 2.9999999999999996` in binary floating point, so which side of an edge a
+decimal-looking probability falls on is a property of the arithmetic, not of the
+decimal. The reported `predicted` is the mean predicted probability in the bin, not the
+bin centre, so a curve is unaffected by the convention except through membership.
 """
 function calibration_curve(predictions::AbstractVector{<:Real},
                            outcomes::AbstractVector{Bool}; bins::Integer=10)
