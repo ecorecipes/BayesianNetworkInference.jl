@@ -9,8 +9,8 @@ EcologicalBayesianNetworks → InfluenceDiagrams → BayesianNetworkInference �
 FiniteKernels, and BayesianNetworks → BayesianNetworkFormats.
 This package depends on: BayesianNetworks, FiniteKernels, Graphs, CliqueTrees, AMD and
 TreeWidthSolver (all hard dependencies -- AMD and TreeWidthSolver back the `AMDOrder` and
-`ExactTreewidth` strategies and are `import`ed, not optional), plus SparseArrays, LinearAlgebra,
-Random and Statistics from the standard library. BayesianNetworkFormats is only a
+`ExactTreewidth` strategies and are `import`ed, not optional), plus SparseArrays, LinearAlgebra
+and Random from the standard library. BayesianNetworkFormats is only a
 test/docs/vignette dependency, for `fixture_path`. It has no Catlab in its
 dependency graph since ADR 0009: `MarkovCategories` was dropped when `evaluate` became this
 package's own function. Sibling packages are expected at `../<Name>.jl` (see `[sources]` in Project.toml,
