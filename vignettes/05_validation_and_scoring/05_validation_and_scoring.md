@@ -389,10 +389,11 @@ answer.
   the model depends on. They describe the model, not the world; they are
   not a substitute for the scores above.
 
-This is the last vignette of `BayesianNetworkInference.jl`. The same
-scoring and sensitivity machinery is applied to published ecological
-networks in the vignettes of `EcologicalBayesianNetworks.jl`, and to
-decisions rather than predictions in `InfluenceDiagrams.jl`.
+This is the last vignette of `BayesianNetworkInference.jl`. The scoring
+machinery is applied to a published ecological network in the “held-out
+validation” vignette of `EcologicalBayesianNetworks.jl`, and the same
+ideas carry over to decisions rather than predictions in
+`InfluenceDiagrams.jl`.
 
 ## References
 
