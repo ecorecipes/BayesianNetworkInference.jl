@@ -93,8 +93,11 @@ stated in `notes`; silence would leave a reader to infer a restriction that does
 - Recording a licence as the source states it makes the catalogue table less tidy - `"CC-BY (version unstated)"` is
   longer than `"CC BY 4.0"` - and that is the point: the untidiness is real and belongs in front of the reader.
 - Committing only originals means the zoo cannot ship a fixed version of a model whose file has a defect. Two BNMA
-  records (Polar Bear Stressor Phase I and II) currently do not parse because the Netica reader rejects empty entries
-  in a parenthesised list; the manifests record that in `known_parse_issue` and the fix belongs in the reader.
+  records (Polar Bear Stressor Phase I and II) did not parse when this record was written, because the Netica reader
+  rejected empty entries in a parenthesised list; the manifests recorded that in `known_parse_issue` and the fix
+  belonged in the reader. **Update (2026-09-25): the reader was fixed** -- `empty_list_entries.dne` is a dedicated
+  fixture -- and `known_parse_issue` is empty for both records. The consequence stands as stated in general; this
+  particular instance is resolved, and the resolution is the one the record predicted.
 - The policy is enforced in three places that must stay in step: this record, `models/README.md`, and
   `licence_permits_redistribution` with its allow-list in `test/registry.jl`. Adding a permitted licence string means
   editing the allow-list, which makes the change visible in review.
