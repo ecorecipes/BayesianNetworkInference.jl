@@ -216,16 +216,6 @@ function _union_axes(f::Factor, g::Factor, operation::Symbol)
     return vars, axes
 end
 
-"""
-    multiply(f::Factor, g::Factor) -> Factor
-    multiply(fs::Factor...) -> Factor
-    f * g
-
-Pointwise product. The scope of the result is `f.vars` followed by the
-variables of `g` not already present, so multiplication is commutative modulo
-axis order. Shared variables must carry identical axes ([`ShapeError`](@ref)
-otherwise). The element type is the promotion of the two element types.
-"""
 # Stride of each result axis inside `h`'s table, zero where `h` lacks that variable, so
 # that a linear walk over the result can index `h` without permuting or reshaping it.
 # `vec` of a table whose rank is not known statically is still a `Vector`, so the kernel
@@ -268,6 +258,16 @@ function _product_into!(out::Vector{T}, sz::Vector{Int}, a::Vector{S}, as::Vecto
     return out
 end
 
+"""
+    multiply(f::Factor, g::Factor) -> Factor
+    multiply(fs::Factor...) -> Factor
+    f * g
+
+Pointwise product. The scope of the result is `f.vars` followed by the
+variables of `g` not already present, so multiplication is commutative modulo
+axis order. Shared variables must carry identical axes ([`ShapeError`](@ref)
+otherwise). The element type is the promotion of the two element types.
+"""
 function multiply(f::Factor{S}, g::Factor{U}) where {S,U}
     vars, axes = _union_axes(f, g, :multiply)
     sz = Int[length(a) for a in axes]
