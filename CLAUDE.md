@@ -62,6 +62,11 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   fails on isolated vertices), `UserOrder`; `elimination_order(fg, strategy; keep)` via
   `permutation(graph; alg=CompositeRotations(keep_idx, alg))`, `treewidth(fg, strategy)`.
 - `src/variable_elimination.jl`: `VariableElimination` backend, `InferenceDiagnostics`, `variable_elimination`,
+  and the elimination-order cache: `graph`/`vars`/`index` exist only to produce `elim`, so the order is what
+  is cached, keyed on `objectid(fg.factors)` plus the evidence's *keys*, the strategy and the query (the
+  conditioned scopes depend on which variables are observed, not on their values, so `predict` shares one
+  entry across every case). Same `WeakRef`/`===` discipline as the junction-tree cache, and the same rule:
+  do not mutate `fg.factors` after a query.
   `infer`, oracle `joint_factor` / `brute_force_marginal`.
 - `src/log_variable_elimination.jl`: `LogVariableElimination` backend,
   `LogInferenceDiagnostics`, `LogFactorDomainError`, `log_variable_elimination`,

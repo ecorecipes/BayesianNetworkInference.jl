@@ -99,3 +99,44 @@
         end
     end
 end
+
+@testset "the elimination-order cache does not leak between queries" begin
+    # The order is cached per (factor-graph identity, evidence *keys*, strategy, query),
+    # because conditioning depends on which variables are observed but not on their values.
+    # That is the whole point -- `predict` reuses one entry across thousands of cases -- and
+    # also the thing that would be wrong if the key were too coarse, so pin it.
+    kernels, _, parents = asia_network()
+    fg = factor_graph_from(kernels, parents)
+
+    a, da = variable_elimination(fg, [:dysp])
+    b, db = variable_elimination(fg, [:dysp])
+    @test a.table == b.table
+    @test da.order == db.order
+
+    # Same evidence variables, different values: the order may be shared, the answer must
+    # not be.
+    yes, _ = variable_elimination(fg, [:dysp]; evidence=Dict(:smoke => :yes))
+    no, _ = variable_elimination(fg, [:dysp]; evidence=Dict(:smoke => :no))
+    @test !(yes.table ≈ no.table)
+    @test yes.table ≈ brute_force_marginal(fg, [:dysp];
+                                           evidence=Dict(:smoke => :yes)).table
+    @test no.table ≈ brute_force_marginal(fg, [:dysp];
+                                          evidence=Dict(:smoke => :no)).table
+
+    # A different evidence variable set, a different query and a different strategy are all
+    # distinct keys, and each still agrees with brute force.
+    other, _ = variable_elimination(fg, [:dysp]; evidence=Dict(:asia => :yes))
+    @test other.table ≈
+          brute_force_marginal(fg, [:dysp];
+                               evidence=Dict(:asia => :yes)).table
+    pair, _ = variable_elimination(fg, [:dysp, :xray])
+    @test pair.table ≈ brute_force_marginal(fg, [:dysp, :xray]).table
+    md, _ = variable_elimination(fg, [:dysp]; order=MinDegree())
+    @test md.table ≈ a.table
+
+    # Two independently built graphs with equal factors are distinct cache entries, and a
+    # graph built after the first is collected must not inherit its order.
+    fg2 = factor_graph_from(kernels, parents)
+    c, _ = variable_elimination(fg2, [:dysp])
+    @test c.table ≈ a.table
+end

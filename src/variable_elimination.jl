@@ -88,14 +88,55 @@ function variable_elimination(fg::FactorGraph{T}, query::AbstractVector{Symbol};
     return _variable_elimination(fg, query, evidence, order, nothing)
 end
 
+# The elimination-order cache. `graph`, `vars` and `index` exist only to produce `elim`,
+# and everything after it depends on `elim` alone, so the order is what is worth keeping.
+#
+# It is a deterministic function of the *conditioned* factor scopes, the strategy and the
+# query. Conditioning removes the observed variables from every scope, so the scopes depend
+# on which variables are observed but not on their values -- which is why the key carries
+# the evidence's keys and not the evidence. That is the case that matters: `predict` scores
+# thousands of cases with the same evidence variables and different values, and they all
+# share one entry.
+#
+# Keyed on the identity of the factor vector, with the same discipline as the junction-tree
+# cache in `junction_tree.jl`: the stored `WeakRef` is compared with `===` on lookup, so a
+# recycled `objectid` can never return another graph's order, and an entry is dropped once
+# the factor vector is unreachable. Do not mutate `fg.factors` after a query; the cached
+# order would no longer describe the graph.
+const _OrderKey = Tuple{Vector{Symbol},EliminationStrategy,Vector{Symbol}}
+const _OrderEntry = Tuple{WeakRef,Dict{_OrderKey,Vector{Symbol}}}
+const _ORDER_CACHE = Dict{UInt,_OrderEntry}()
+
+# A workload that sweeps many distinct evidence patterns would otherwise grow an entry per
+# pattern; drop the graph's orders wholesale rather than grow without bound.
+const _ORDER_CACHE_LIMIT = 256
+
+function _cached_elimination_order(factors::Vector{<:Factor}, owner, query, evidence,
+                                   order)
+    key = (sort!(collect(Symbol, keys(evidence))), order, collect(Symbol, query))
+    id = objectid(owner)
+    entry = get(_ORDER_CACHE, id, nothing)
+    if entry !== nothing && entry[1].value === owner
+        cached = get(entry[2], key, nothing)
+        cached === nothing || return cached
+    else
+        entry = (WeakRef(owner), Dict{_OrderKey,Vector{Symbol}}())
+        _ORDER_CACHE[id] = entry
+    end
+    vars = _variables(factors)
+    graph, vars, index = _interaction_graph(factors, vars)
+    elim = _elimination_order(graph, vars, index, _restrict(order, evidence), query)
+    length(entry[2]) < _ORDER_CACHE_LIMIT || empty!(entry[2])
+    entry[2][key] = elim
+    return elim
+end
+
 function _variable_elimination(fg::FactorGraph{T}, query, evidence, order,
                                observer) where {T}
     _check_query(fg, query, evidence)
     factors = Factor{T}[condition(f, evidence) for f in fg.factors]
     observer === nothing || observer(:conditioned, factors)
-    vars = _variables(factors)
-    graph, vars, index = _interaction_graph(factors, vars)
-    elim = _elimination_order(graph, vars, index, _restrict(order, evidence), query)
+    elim = _cached_elimination_order(factors, fg.factors, query, evidence, order)
     max_size = 0
     n_mult = 0
     width = 0
