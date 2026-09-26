@@ -2499,7 +2499,7 @@ vertical-align: -.125em;
 <span id="cb40-4"><a href="#cb40-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">typeof</span>(<span class="cn">e</span>)</span>
 <span id="cb40-5"><a href="#cb40-5" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>KernelNormalizationError</code></pre>
+<pre><code>ImpossibleEvidenceError</code></pre>
 </div>
 </div>
 <section id="slow-updates-are-not-convergence" class="level3">
@@ -2537,7 +2537,7 @@ vertical-align: -.125em;
 <span id="cb46-4"><a href="#cb46-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">typeof</span>(<span class="cn">e</span>)</span>
 <span id="cb46-5"><a href="#cb46-5" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>KernelNormalizationError</code></pre>
+<pre><code>ImpossibleEvidenceError</code></pre>
 </div>
 </div>
 <p>The optional exact VE pass detects the contradiction. Its potentially exponential cost is explicit: it is not silently imposed on every loopy-BP run.</p>
@@ -2584,9 +2584,9 @@ vertical-align: -.125em;
 <span id="cb50-11"><a href="#cb50-11" aria-hidden="true" tabindex="-1"></a>(julia <span class="op">=</span> <span class="fu">string</span>(<span class="cn">VERSION</span>), cpu <span class="op">=</span> <span class="bu">Sys</span>.CPU_NAME, threads <span class="op">=</span> <span class="bu">Threads</span>.<span class="fu">nthreads</span>(),</span>
 <span id="cb50-12"><a href="#cb50-12" aria-hidden="true" tabindex="-1"></a> repetitions <span class="op">=</span> <span class="fl">3</span>, statistic <span class="op">=</span> <span class="st">&quot;minimum after warm-up&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
-<pre><code>(backend = :JunctionTree, seconds = 0.0012, max_error = 2.22e-16)
-(backend = :VariableElimination, seconds = 0.0234, max_error = 0.0)
-(backend = :BeliefPropagation, seconds = 0.0108, max_error = 0.0521)</code></pre>
+<pre><code>(backend = :JunctionTree, seconds = 0.0009, max_error = 2.22e-16)
+(backend = :VariableElimination, seconds = 0.0179, max_error = 0.0)
+(backend = :BeliefPropagation, seconds = 0.0089, max_error = 0.0521)</code></pre>
 </div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>(julia = &quot;1.12.7&quot;, cpu = &quot;apple-m1&quot;, threads = 1, repetitions = 3, statistic = &quot;minimum after warm-up&quot;)</code></pre>

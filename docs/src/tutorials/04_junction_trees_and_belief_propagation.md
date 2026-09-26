@@ -295,7 +295,7 @@ catch e
 end
 ```
 
-    KernelNormalizationError
+    ImpossibleEvidenceError
 
 ### Slow updates are not convergence
 
@@ -340,7 +340,7 @@ catch e
 end
 ```
 
-    KernelNormalizationError
+    ImpossibleEvidenceError
 
 The optional exact VE pass detects the contradiction. Its potentially
 exponential cost is explicit: it is not silently imposed on every
@@ -392,9 +392,9 @@ foreach(println, rows)
  repetitions = 3, statistic = "minimum after warm-up")
 ```
 
-    (backend = :JunctionTree, seconds = 0.001, max_error = 2.22e-16)
-    (backend = :VariableElimination, seconds = 0.0253, max_error = 0.0)
-    (backend = :BeliefPropagation, seconds = 0.0119, max_error = 0.0521)
+    (backend = :JunctionTree, seconds = 0.0008, max_error = 2.22e-16)
+    (backend = :VariableElimination, seconds = 0.0178, max_error = 0.0)
+    (backend = :BeliefPropagation, seconds = 0.0084, max_error = 0.0521)
 
     (julia = "1.12.7", cpu = "apple-m1", threads = 1, repetitions = 3, statistic = "minimum after warm-up")
 

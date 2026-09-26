@@ -119,8 +119,8 @@ end
     4-element Vector{NamedTuple{(:n, :default, :log_domain, :log_mass, :status)}}:
      (n = 300, default = [0.9, 0.1], log_domain = [0.9, 0.1], log_mass = -693.1, status = :finite)
      (n = 320, default = [0.901, 0.099], log_domain = [0.9, 0.1], log_mass = -739.1, status = :finite)
-     (n = 340, default = KernelNormalizationError, log_domain = [0.9, 0.1], log_mass = -785.2, status = :underflow)
-     (n = 400, default = KernelNormalizationError, log_domain = [0.9, 0.1], log_mass = -923.3, status = :underflow)
+     (n = 340, default = ImpossibleEvidenceError, log_domain = [0.9, 0.1], log_mass = -785.2, status = :underflow)
+     (n = 400, default = ImpossibleEvidenceError, log_domain = [0.9, 0.1], log_mass = -923.3, status = :underflow)
 
 At 300 sites the two agree. At 320 the default backend still returns an
 answer, but it is no longer the right one — the fourth decimal has
@@ -185,7 +185,7 @@ contradictory observation produce zero mass and the same error.
  end)
 ```
 
-    (rare_chain = KernelNormalizationError, contradiction = KernelNormalizationError)
+    (rare_chain = ImpossibleEvidenceError, contradiction = ImpossibleEvidenceError)
 
 Both raise, and the two situations are not the same: one answer exists
 and cannot be reached in Float64, the other does not exist.
