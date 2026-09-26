@@ -189,3 +189,32 @@ end
     end
     @test compared >= 300
 end
+
+@testset "the stride kernel and _broadcastable agree" begin
+    # `multiply` walks the result with explicit strides; the log-domain path and
+    # InfluenceDiagrams' valuation layer still align factors with `_broadcastable`. Two ways
+    # of computing the same alignment is exactly the shape of divergence that let
+    # `normalize`'s empty-scope bug survive in the log path only, so check they agree rather
+    # than trusting the comment in CLAUDE.md that says to keep them in step.
+    rng = MersenneTwister(21)
+    names = [:A, :B, :C, :D]
+    compared = 0
+    for _ in 1:300
+        card = Dict(n => rand(rng, 2:4) for n in names)
+        fv = sort(randsubseq(rng, names, 0.6))
+        gv = sort(randsubseq(rng, names, 0.6))
+        (isempty(fv) || isempty(gv)) && continue
+        mk(vs) = [FiniteAxis(v, [Symbol(v, i) for i in 1:card[v]]) for v in vs]
+        fa, ga = mk(fv), mk(gv)
+        f = Factor(fa, rand(rng, Tuple(length(a) for a in fa)...))
+        g = Factor(ga, rand(rng, Tuple(length(a) for a in ga)...))
+
+        vars, axes = BayesianNetworkInference._union_axes(f, g, :test)
+        sz = Tuple(length(a) for a in axes)
+        broadcast_table = BayesianNetworkInference._broadcastable(f, vars, sz) .*
+                          BayesianNetworkInference._broadcastable(g, vars, sz)
+        @test multiply(f, g).table ≈ broadcast_table
+        compared += 1
+    end
+    @test compared >= 200
+end
