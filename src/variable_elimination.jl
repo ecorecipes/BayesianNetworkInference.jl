@@ -50,11 +50,22 @@ function _check_query(fg::FactorGraph, query, evidence)
     return nothing
 end
 
+# The one zero-mass check of every posterior entry point (ADR 0012): the evidence mass
+# must be positive before a posterior is formed from it. The test is `mass <= 0`, so a
+# negative mass (tolerated negative entries) is caught as well as zero, while a NaN mass,
+# which a validated model cannot produce (a raw factor graph can: an overflowed product,
+# 0 * Inf), is not impossibility and keeps its current result (ADR 0012, decision 5).
+# Empty queries never reach it: they return the unnormalised mass (ADR 0011).
 function _require_evidence_mass(mass, evidence)
-    iszero(mass) &&
-        throw(KernelNormalizationError("cannot form a posterior: the evidence $(sort!(collect(evidence); by=first)) has zero total mass",
-                                       1.0, 0.0))
+    mass <= 0 && throw(ImpossibleEvidenceError(Dict{Symbol,Symbol}(evidence)))
     return nothing
+end
+
+# Normalise a posterior factor after checking its mass, so that posterior code never
+# reaches the `ArgumentError` of `normalize(::Factor)`.
+function _posterior_normalize(f::Factor, evidence)
+    _require_evidence_mass(sum(f.table), evidence)
+    return normalize(f)
 end
 
 # Strategy restricted to the variables that survive conditioning.
@@ -80,7 +91,10 @@ past the factors that do not mention the eliminated variable is the
 optimisation of [ZhangPoole1994](@cite).
 
 Throws [`ScopeError`](@ref) for unknown or repeated query variables, unknown
-evidence variables, or a query variable that also carries evidence.
+evidence variables, or a query variable that also carries evidence, and
+`BayesianNetworks.ImpossibleEvidenceError` for a non-empty `query` when the
+evidence has zero computed probability (zero or negative mass, including a
+positive mass that underflowed; see its docstring).
 """
 function variable_elimination(fg::FactorGraph{T}, query::AbstractVector{Symbol};
                               evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
@@ -164,7 +178,7 @@ function _variable_elimination(fg::FactorGraph{T}, query, evidence, order,
     width = max(width, ndims(result) - 1)
     result = reorder(result, query)
     observer === nothing || observer(:final_product, result)
-    isempty(query) || (result = normalize(result))
+    isempty(query) || (result = _posterior_normalize(result, evidence))
     observer === nothing || observer(:result, result)
     return result, InferenceDiagnostics(elim, max_size, n_mult, width)
 end
@@ -230,7 +244,7 @@ function brute_force_marginal(fg::FactorGraph, query::AbstractVector{Symbol};
     _check_query(fg, query, evidence)
     j = condition(joint_factor(fg), evidence)
     m = reorder(marginalize(j, setdiff(j.vars, query)), query)
-    return isempty(query) ? m : normalize(m)
+    return isempty(query) ? m : _posterior_normalize(m, evidence)
 end
 function brute_force_marginal(fg::FactorGraph, query::Symbol; kwargs...)
     return brute_force_marginal(fg, [query]; kwargs...)

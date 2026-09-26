@@ -95,7 +95,7 @@ end
 
 # Message state of one run: factor `f` has one message in each direction for
 # every position `k` of its scope; `incidences[x]` lists the `(f, k)` pairs of
-# variable `x`.
+# variable `x`. `evidence` is carried so that a zero message or belief can report it.
 struct _BPState{T}
     factors::Vector{Factor{T}}
     vars::Vector{Symbol}
@@ -103,9 +103,11 @@ struct _BPState{T}
     incidences::Vector{Vector{Tuple{Int,Int}}}
     to_var::Vector{Vector{Vector{T}}}      # to_var[f][k]: factor f to variable at position k
     to_factor::Vector{Vector{Vector{T}}}   # to_factor[f][k]: that variable to factor f
+    evidence::Dict{Symbol,Symbol}
 end
 
-function _BPState(factors::Vector{Factor{T}}, axes::Dict{Symbol,FiniteAxis}) where {T}
+function _BPState(factors::Vector{Factor{T}}, axes::Dict{Symbol,FiniteAxis},
+                  evidence::Dict{Symbol,Symbol}) where {T}
     vars = _variables(factors)
     index = Dict{Symbol,Int}(v => i for (i, v) in enumerate(vars))
     incidences = [Tuple{Int,Int}[] for _ in vars]
@@ -116,19 +118,17 @@ function _BPState(factors::Vector{Factor{T}}, axes::Dict{Symbol,FiniteAxis}) whe
     to_var = [[uniform(fac, k) for k in 1:ndims(fac)] for fac in factors]
     to_factor = [[uniform(fac, k) for k in 1:ndims(fac)] for fac in factors]
     return _BPState{T}(factors, vars, FiniteAxis[axes[v] for v in vars], incidences, to_var,
-                       to_factor)
+                       to_factor, evidence)
 end
 
 # Normalise a message in place. An all-zero message means that the supports of
 # the incoming messages and of the factor do not intersect, i.e. the
 # configuration has probability zero under the evidence; that is a hard
 # failure, reported exactly as variable elimination and the junction tree
-# report impossible evidence.
-function _normalize!(m::Vector, what::AbstractString)
+# report impossible evidence: `ImpossibleEvidenceError` (ADR 0012).
+function _normalize!(m::Vector, evidence)
     s = sum(m)
-    iszero(s) &&
-        throw(KernelNormalizationError("belief propagation cannot normalise the $what: it is identically zero, so the evidence has probability zero",
-                                       1.0, 0.0))
+    _require_evidence_mass(s, evidence)
     m ./= s
     return m
 end
@@ -140,7 +140,7 @@ function _variable_message(st::_BPState{T}, x::Int, f::Int, k::Int) where {T}
         (g == f && l == k) && continue
         m .*= st.to_var[g][l]
     end
-    return _normalize!(m, "message from variable $(repr(st.vars[x])) to factor $f")
+    return _normalize!(m, st.evidence)
 end
 
 # m_{f -> x}(x) = sum_{x_f \ x} f(x_f) prod_{y != x} m_{y -> f}(y), x at position k.
@@ -163,8 +163,7 @@ function _update_factor!(st::_BPState{T}, f::Int, damping) where {T}
     fac = st.factors[f]
     residual = 0.0
     for k in 1:ndims(fac)
-        new = _normalize!(_factor_message(fac, st.to_factor[f], k),
-                          "message from factor $f to variable $(repr(fac.vars[k]))")
+        new = _normalize!(_factor_message(fac, st.to_factor[f], k), st.evidence)
         old = st.to_var[f][k]
         residual = max(residual, maximum(abs.(new .- old)))
         iszero(damping) || (new .= (1 - damping) .* new .+ damping .* old)
@@ -179,8 +178,7 @@ function _fixed_point_residual!(st::_BPState)
     end
     residual = 0.0
     for (f, fac) in enumerate(st.factors), k in 1:ndims(fac)
-        target = _normalize!(_factor_message(fac, st.to_factor[f], k),
-                             "message from factor $f to variable $(repr(fac.vars[k]))")
+        target = _normalize!(_factor_message(fac, st.to_factor[f], k), st.evidence)
         residual = max(residual, maximum(abs.(target .- st.to_var[f][k])))
     end
     return residual
@@ -212,7 +210,7 @@ function _belief(st::_BPState{T}, x::Int) where {T}
     for (g, l) in st.incidences[x]
         m .*= st.to_var[g][l]
     end
-    return normalize(_factor([st.vars[x]], [st.axes[x]], m))
+    return _posterior_normalize(_factor([st.vars[x]], [st.axes[x]], m), st.evidence)
 end
 
 """
@@ -241,10 +239,12 @@ study of [MurphyWeissJordan1999](@cite).
 
 Detectable impossible evidence is an error: when a dropped scalar factor is
 zero, when a message is identically zero, or when the belief of a variable
-has zero mass, `FiniteKernels.KernelNormalizationError` is thrown rather
-than a normalised belief returned. Local support is not a global feasibility
-test on loopy graphs, and damped iterates may retain tiny positive support.
-Set `backend.check_evidence=true` to run an exact VE feasibility check first;
+has zero mass, `BayesianNetworks.ImpossibleEvidenceError` is thrown rather
+than a normalised belief returned, as variable elimination and the junction
+tree do. Local support is not a global feasibility test on loopy graphs,
+and damped iterates may retain tiny positive support. Set
+`backend.check_evidence=true` to run an exact VE feasibility check first
+(it throws the same error for zero evidence mass);
 `diagnostics.evidence_checked` records that opt-in.
 
 Throws [`ScopeError`](@ref) for evidence on unknown variables and
@@ -266,10 +266,9 @@ function belief_propagation(fg::FactorGraph{T},
         g = _convert_factor(R, condition(f, ev))
         isempty(g.vars) ? (scale *= g.table[]) : push!(factors, g)
     end
-    iszero(scale) &&
-        throw(KernelNormalizationError("belief propagation: the evidence $(sort!(collect(ev), by=first)) has probability zero (a factor conditioned to the empty scope is zero)",
-                                       1.0, 0.0))
-    st = _BPState(factors, fg.axes)
+    # a factor conditioned to the empty scope is zero: the evidence has probability zero
+    _require_evidence_mass(scale, ev)
+    st = _BPState(factors, fg.axes, ev)
     iterations = 0
     residual = Inf
     converged = false

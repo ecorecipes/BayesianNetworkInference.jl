@@ -178,8 +178,9 @@ carries it; pass it directly to condition every case on the same background
 evidence.
 
 Throws [`ScopeError`](@ref) if `target` or an evidence variable is not a
-variable of the model, and `FiniteKernels.KernelNormalizationError`, naming
-the case, if a case's evidence has probability zero under the model.
+variable of the model, and `BayesianNetworks.ImpossibleEvidenceError`, carrying
+the failing case's merged evidence, if a case's evidence has zero computed
+probability under the model.
 """
 function predict(fg::FactorGraph, cases, target::Symbol;
                  evidence_vars::Union{Nothing,AbstractVector{Symbol}}=nothing,
@@ -207,14 +208,7 @@ function predict(fg::FactorGraph, cases, target::Symbol;
         ev = merge(Dict{Symbol,Symbol}(base_evidence),
                    Dict{Symbol,Symbol}(v => case[v] for v in ev_vars if haskey(case, v)))
         delete!(ev, target)
-        f = try
-            first(infer(fg, [target]; evidence=ev, backend))
-        catch e
-            e isa KernelNormalizationError &&
-                throw(KernelNormalizationError("the evidence of case $i has probability zero under the model, so $(repr(target)) has no posterior there",
-                                               1.0, 0.0; name=target))
-            rethrow()
-        end
+        f = first(infer(fg, [target]; evidence=ev, backend))
         probs[i, :] = f.table
         haskey(case, target) && (outcomes[i] = label_index(ax, case[target]))
     end

@@ -358,15 +358,21 @@ end
 """
     normalize(f::Factor) -> Factor
 
-Divide by the total mass so that the table sums to one. Throws
-`FiniteKernels.KernelNormalizationError` when the total is zero. Extends
-`LinearAlgebra.normalize`, as `FiniteKernels` does for kernels.
+Divide by the total mass so that the table sums to one. Throws an
+`ArgumentError` naming the scope when the total is zero, as `FiniteKernels`
+does for a kernel column that sums to zero. Extends `LinearAlgebra.normalize`,
+as `FiniteKernels` does for kernels.
+
+Posterior entry points never reach that error: they check the evidence mass
+first and throw `BayesianNetworks.ImpossibleEvidenceError` (ADR 0012).
 """
 function normalize(f::Factor)
     s = sum(f.table)
+    # `normalize` cannot report a deviation from one or a tolerance, so a zero total is an
+    # `ArgumentError` rather than a `KernelNormalizationError` with fabricated numbers
+    # (ADR 0007 for kernels, ADR 0012 for factors).
     iszero(s) &&
-        throw(KernelNormalizationError("cannot normalise a factor over $(f.vars) with zero total mass",
-                                       1.0, 0.0))
+        throw(ArgumentError("normalize: the factor over $(f.vars) sums to zero, so it cannot be rescaled to sum to one"))
     # `f.table ./ s` returns a *scalar* for an empty scope, where the table is a 0-d array,
     # so divide in place: an empty-scope factor arises from any maximal clique that evidence
     # fully instantiates. The log-domain path already does this.

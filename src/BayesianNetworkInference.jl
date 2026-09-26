@@ -54,7 +54,7 @@ using FiniteKernels
 using FiniteKernels: labels, label_index
 using BayesianNetworks: BayesianNetworks, BayesModel, syntax, variable_name, mechanism_of,
                         mechanism_name, inputs, topological_order, exogenous,
-                        missing_kernels, kernel, states
+                        missing_kernels, kernel, states, ImpossibleEvidenceError
 # Names shared with BayesianNetworks.jl are extended, not shadowed, so that
 # `using BayesianNetworks, BayesianNetworkInference` never needs qualification.
 import BayesianNetworks: variables, axis, empirical_marginal
@@ -110,6 +110,10 @@ export Case, Cases, Predictions, predict, baseline, brier_score, log_score,
 export entropy, mutual_information, sensitivity, tornado
 # Re-exported from FiniteKernels for convenience
 export FiniteAxis, FiniteSpace, FiniteKernel, cpt, KernelNormalizationError
+# Re-exported from BayesianNetworks: the one error every posterior entry point raises for
+# evidence of zero computed probability (ADR 0012). The binding is BayesianNetworks' own,
+# never a second definition, so it stays unambiguous and prints unqualified.
+export ImpossibleEvidenceError
 
 include("factors.jl")
 include("factor_graph.jl")

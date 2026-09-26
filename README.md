@@ -49,13 +49,17 @@ with `BayesianNetworkFormats.jl` (file formats) and `EcologicalBayesianNetworks.
 - `BeliefPropagation` backend: sum-product with damping, iteration limits and flooding/sequential
   schedules. `BPDiagnostics` reports the undamped fixed-point residual at the returned iterate;
   it is not a general marginal-error bound. Fixed points on feasible trees are exact, whereas
-  loopy beliefs are approximations. Local zero support raises `KernelNormalizationError`,
+  loopy beliefs are approximations. Local zero support raises `ImpossibleEvidenceError`,
   but does not detect every globally impossible event. Opt into
   `BeliefPropagation(check_evidence=true)` for an exact VE feasibility pass;
   `diagnostics.evidence_checked` distinguishes that from unknown feasibility.
 - Exact VE/JT posterior entry points check global mass, including disconnected components and
-  all-observed shortcuts. An empty `infer` query still returns unnormalized evidence mass,
-  which may legitimately be zero. Integer factors promote to division-compatible posterior types.
+  all-observed shortcuts. When it is zero or negative they raise `ImpossibleEvidenceError`, the
+  error `BayesianNetworks.marginal` raises (re-exported here); every backend, and everything built
+  on them, raises the same one (ADR 0012). Until a later ADR this includes a positive mass that
+  underflowed, which the log-domain backends answer instead. An empty `infer` query still returns
+  unnormalized evidence mass, which may legitimately be zero. Integer factors promote to
+  division-compatible posterior types.
 - `ancestral_sample` over named kernels in topological order and `empirical_marginal` for Monte Carlo cross-checks.
 - Out-of-sample validation: `Cases` datasets (a vector of `Dict{Symbol,Symbol}` observations, complete or
   partial), `predict` for a withheld target, the proper scoring rules `brier_score`, `log_score` and
@@ -64,8 +68,9 @@ with `BayesianNetworkFormats.jl` (file formats) and `EcologicalBayesianNetworks.
   index splits (with `by` for grouped spatial or temporal holdout), and `evaluate` for the lot in one table.
 - Sensitivity analysis: `entropy`, `mutual_information`, `sensitivity` (Marcot 2012's entropy-reduction
   ranking of every variable against a target) and `tornado` (the range one finding could move an answer).
-- Typed exceptions (`ScopeError`, `ShapeError`, `CompileError`, plus `KernelNormalizationError` / `InvalidAxisError`
-  from `FiniteKernels.jl`) carrying the offending variable names.
+- Typed exceptions (`ScopeError`, `ShapeError`, `CompileError`, `ImpossibleEvidenceError` from
+  `BayesianNetworks.jl` for evidence of zero computed probability, plus `KernelNormalizationError` /
+  `InvalidAxisError` from `FiniteKernels.jl`) carrying the offending variable names or evidence.
 
 ## Exact finite-model proof scope
 

@@ -24,14 +24,14 @@
     impossible = FactorGraph([Factor(a, [0.0, 1.0]), Factor(c, [0.25, 0.75])])
     @test log_evidence_probability(log_calibrate(impossible; evidence=Dict(:A => :low))) ==
           -Inf
-    @test_throws KernelNormalizationError infer(impossible, :C; evidence=Dict(:A => :low),
-                                                backend=LogJunctionTree())
-    @test_throws KernelNormalizationError all_marginals(impossible;
+    @test_throws ImpossibleEvidenceError infer(impossible, :C; evidence=Dict(:A => :low),
+                                               backend=LogJunctionTree())
+    @test_throws ImpossibleEvidenceError all_marginals(impossible;
+                                                       evidence=Dict(:A => :low),
+                                                       backend=LogJunctionTree())
+    @test_throws ImpossibleEvidenceError clique_beliefs(impossible;
                                                         evidence=Dict(:A => :low),
                                                         backend=LogJunctionTree())
-    @test_throws KernelNormalizationError clique_beliefs(impossible;
-                                                         evidence=Dict(:A => :low),
-                                                         backend=LogJunctionTree())
     for value in (-eps(), NaN, Inf)
         invalid = FactorGraph([Factor(a, [value, 1.0]), Factor(c, [0.25, 0.75])])
         @test_throws LogFactorDomainError log_calibrate(invalid; evidence=Dict(:A => :high))

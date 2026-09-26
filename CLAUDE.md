@@ -44,6 +44,10 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   valuation arithmetic. Keep their axis-agreement and first-occurrence ordering contracts stable.
 - Exact posterior entry points reject globally zero mass before returning component marginals or
   observed point masses. Empty inference queries retain their unnormalized mass convention.
+  The rejection is `BayesianNetworks.ImpossibleEvidenceError` (re-exported here, never redefined),
+  raised through `_require_evidence_mass` / `_posterior_normalize` in `variable_elimination.jl`
+  with the test `mass <= 0`, so NaN is not impossibility (ADR 0012). `normalize(::Factor)` on a
+  zero total is an `ArgumentError`; `KernelNormalizationError` means only kernel columns.
 - BP convergence uses the undamped residual at the returned iterate, not the damped step and not a
   marginal-error bound. `check_evidence=true` opts into VE feasibility; `evidence_checked=false`
   leaves global feasibility unknown. Integer inputs promote to division-compatible types.
@@ -124,7 +128,7 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   `test/test_junction_tree.jl` (JT versus VE and brute force on asia, the habitat chain, random DAGs, forests,
   the 30-variable `benchmark_network`, and the bnlearn `water` model when `ECOLOGICAL_BN_SLOW=true` and the
   sibling zoo is checked out); `test/test_belief_propagation.jl` (exact on chains and polytrees, loopy on asia, and impossible
-  evidence raising `KernelNormalizationError` in all three backends); `test/test_scores.jl`
+  evidence raising `ImpossibleEvidenceError` in all three backends); `test/test_scores.jl`
   (hand-computed Brier / log / spherical scores on an enumerable two-variable network, scores against
   brute-force enumeration on random DAGs, calibrated and miscalibrated synthetic generators, AUC 1.0 and
   0.5, split invariants); `test/test_sensitivity.jl` (zero mutual information for d-separated variables,
@@ -132,7 +136,8 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   `test/test_log_junction_tree.jl` (the log-domain backends against their linear counterparts,
   and on models whose joint underflows Float64); `test/test_execution_trace.jl`;
   `test/test_regressions.jl` (the ADR 0011 suite: the obstructions that composition and
-  reassociation are known to have, pinned so they cannot be quietly "fixed").
+  reassociation are known to have, pinned so they cannot be quietly "fixed"; and ADR 0012's
+  matrix: one impossible model gives `ImpossibleEvidenceError` from every entry point).
 - `vignettes/`: 01 factors and VE (ends with the model-level Demo 1: `.dne` -> `infer` -> `do` -> `.xdsl`),
   02 orderings, 03 sampling and Monte Carlo checks, 04 junction trees and belief propagation,
   05 validation and scoring (simulate cases, grouped holdout, calibration, prior baseline, mutual information),

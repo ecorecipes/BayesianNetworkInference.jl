@@ -4,21 +4,21 @@
     fg = FactorGraph([Factor(x, [1.0, 0.0]), Factor(y, [0.3, 0.7])])
     impossible = Dict(:X => :no)
     for backend in (VariableElimination(), JunctionTree())
-        @test_throws KernelNormalizationError infer(fg, :Y; evidence=impossible, backend)
-        @test_throws KernelNormalizationError all_marginals(fg; evidence=impossible,
-                                                            backend)
+        @test_throws ImpossibleEvidenceError infer(fg, :Y; evidence=impossible, backend)
+        @test_throws ImpossibleEvidenceError all_marginals(fg; evidence=impossible,
+                                                           backend)
         @test infer(fg, Symbol[]; evidence=impossible, backend)[1].table[] == 0
         @test infer(fg, :Y; evidence=Dict(:X => :yes), backend)[1].table ≈ [0.3, 0.7]
         single = FactorGraph([Factor(x, [1.0, 0.0])])
-        @test_throws KernelNormalizationError all_marginals(single; evidence=impossible,
-                                                            backend)
+        @test_throws ImpossibleEvidenceError all_marginals(single; evidence=impossible,
+                                                           backend)
         @test all_marginals(single; evidence=Dict(:X => :yes), backend)[:X].table ==
               [1.0, 0.0]
         scalar = FactorGraph([Factor(FiniteAxis[], fill(0.0))])
-        @test_throws KernelNormalizationError all_marginals(scalar; backend)
+        @test_throws ImpossibleEvidenceError all_marginals(scalar; backend)
         @test infer(scalar, Symbol[]; backend)[1].table[] == 0
     end
-    @test_throws KernelNormalizationError clique_beliefs(fg; evidence=impossible)
+    @test_throws ImpossibleEvidenceError clique_beliefs(fg; evidence=impossible)
 
     for T in (Int, Float32, Rational{Int})
         weights = FactorGraph([Factor(x, T[1, 1]), Factor(y, T[1, 3])])
@@ -69,9 +69,9 @@ end
     _, unchecked = infer(m, :A; evidence=ev, backend=BeliefPropagation())
     @test unchecked.converged && !unchecked.tree && !unchecked.evidence_checked
     for schedule in (:flooding, :sequential)
-        @test_throws KernelNormalizationError infer(m, :A; evidence=ev,
-                                                    backend=BeliefPropagation(; schedule,
-                                                                              check_evidence=true))
+        @test_throws ImpossibleEvidenceError infer(m, :A; evidence=ev,
+                                                   backend=BeliefPropagation(; schedule,
+                                                                             check_evidence=true))
     end
 end
 
@@ -119,4 +119,104 @@ end
     cases = [Dict(:X => :yes, :Y => :yes), Dict(:X => :no, :Y => :no)]
     @test length(predict(m, cases, :X; atol=1e-6)) == 2
     @test isfinite(evaluate(m, cases, :X; atol=1e-6).brier)
+end
+
+# ADR 0012: one exception for evidence with zero mass. Every posterior entry point raises
+# BayesianNetworks' own ImpossibleEvidenceError, carrying the evidence, where Inference
+# used to raise FiniteKernels.KernelNormalizationError with fabricated numbers.
+@testset "one error for zero evidence mass (ADR 0012)" begin
+    raised(f) =
+        try
+            f()
+            nothing
+        catch e
+            e
+        end
+    @test ImpossibleEvidenceError === BayesianNetworks.ImpossibleEvidenceError
+
+    # B is never b1, so observing it has zero mass under every backend.
+    bn = bayesnet(:A => [:a1, :a2], :B => [:b1, :b2], :C => [:c1, :c2];
+                  mechanisms=[:B => (:A,), :C => (:A,)])
+    m = bind_cpt(BayesModel(bn),
+                 [:A => [0.5, 0.5], :B => [0.0 1.0; 0.0 1.0], :C => [0.3 0.7; 0.6 0.4]])
+    ev = Dict(:B => :b1)
+    bad = observe(m, :B => :b1)
+    fg = compile(m)
+    backends = (VariableElimination(), JunctionTree(),
+                BeliefPropagation(; check_evidence=true),
+                LogVariableElimination(), LogJunctionTree())
+    calls = Pair{String,Function}["BayesianNetworks.marginal" => () -> marginal(bad, :A)]
+    for backend in backends
+        name = string(nameof(typeof(backend)))
+        push!(calls, "infer, $name" => () -> infer(bad, :A; backend))
+        push!(calls, "all_marginals, $name" => () -> all_marginals(bad; backend))
+    end
+    append!(calls,
+            ["clique_beliefs" => () -> clique_beliefs(fg; evidence=ev),
+             "clique_beliefs, LogJunctionTree" => () -> clique_beliefs(fg; evidence=ev,
+                                                                       backend=LogJunctionTree()),
+             "brute_force_marginal" => () -> brute_force_marginal(fg, :A; evidence=ev),
+             "posterior" => () -> posterior(bad, :A),
+             "entropy" => () -> entropy(bad, :A),
+             "mutual_information" => () -> mutual_information(bad, :A, :C),
+             "sensitivity" => () -> sensitivity(bad, :A),
+             "predict" => () -> predict(m, [Dict(:B => :b1)], :A),
+             "trace_variable_elimination" => () -> trace_variable_elimination(bad, [:A]),
+             # the base query: before ADR 0012 tornado skipped every finding and
+             # returned an empty table
+             "tornado" => () -> tornado(bad, :A, :a1)])
+    for (name, call) in calls
+        @testset "$name" begin
+            e = raised(call)
+            @test e isa ImpossibleEvidenceError
+            @test e isa ImpossibleEvidenceError && e.evidence == ev
+        end
+    end
+    # Empty queries keep ADR 0011's meaning: the unnormalised mass, which may be zero.
+    for backend in (VariableElimination(), JunctionTree(), LogVariableElimination(),
+                    LogJunctionTree())
+        @test first(infer(bad, Symbol[]; backend)).table[] == 0
+    end
+    @test log_evidence_probability(bad) == -Inf
+    # tornado still skips an impossible finding (B = b1) when the base evidence is possible
+    t = tornado(m, :A, :a1; variables=[:B])
+    @test length(t) == 1 && t[1].low_state == t[1].high_state == :b2
+
+    # A graph of zero total mass with no evidence raises it with empty evidence, and its
+    # message says so.
+    x = FiniteAxis(:X, [:x1, :x2])
+    nothing_possible = FactorGraph([Factor(x, [0.0, 0.0])])
+    for backend in (VariableElimination(), JunctionTree(), BeliefPropagation(),
+                    LogVariableElimination(), LogJunctionTree())
+        e = raised(() -> infer(nothing_possible, :X; backend))
+        @test e isa ImpossibleEvidenceError && isempty(e.evidence)
+        @test occursin("zero total mass", sprint(showerror, e))
+    end
+    @test first(infer(nothing_possible, Symbol[])).table[] == 0
+
+    # A model that validates may hold an entry of -1e-9 (within atol), and evidence on it
+    # can then have a negative computed mass. The check is `mass <= 0`, so that is
+    # reported too; it used to test `iszero` and return a posterior.
+    chain = bayesnet(:A => [:a1, :a2], :B => [:b1, :b2]; mechanisms=[:B => (:A,)])
+    tolerated = bind_cpt(BayesModel(chain),
+                         [:A => [0.5, 0.5], :B => [-1e-9 (1+1e-9); 0.0 1.0]])
+    @test validate(tolerated; semantics=true) === nothing
+    negative = Dict(:B => :b1)
+    for backend in (VariableElimination(), JunctionTree())
+        @test first(infer(tolerated, Symbol[]; evidence=negative, backend)).table[] < 0
+        e = raised(() -> infer(tolerated, :A; evidence=negative, backend))
+        @test e isa ImpossibleEvidenceError && e.evidence == negative
+    end
+
+    # An overflowed raw product (1e300 * 1e300 * 0) has a NaN mass. That is not
+    # impossibility: until a later ADR classifies overflow, the posterior keeps its NaN
+    # result and no ImpossibleEvidenceError is raised (ADR 0012, decision 5).
+    overflow = FactorGraph([Factor(x, [1e300, 1e300]), Factor(x, [1e300, 1e300]),
+                            Factor(x, [0.0, 1.0])])
+    for backend in (VariableElimination(), JunctionTree())
+        @test isnan(first(infer(overflow, Symbol[]; backend)).table[])
+        @test raised(() -> infer(overflow, :X; backend)) === nothing
+        @test all(isnan, first(infer(overflow, :X; backend)).table)
+    end
+    @test all(isnan, brute_force_marginal(overflow, :X).table)
 end

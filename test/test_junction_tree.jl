@@ -157,8 +157,8 @@ end
         @test_throws ShapeError calibrate(other, build_junction_tree(fg))
         # impossible evidence cannot be normalised
         impossible = Dict(:lung => :yes, :either => :no)
-        @test_throws KernelNormalizationError infer(fg, :dysp; evidence=impossible,
-                                                    backend=JunctionTree())
+        @test_throws ImpossibleEvidenceError infer(fg, :dysp; evidence=impossible,
+                                                   backend=JunctionTree())
         @test infer(fg, Symbol[]; evidence=impossible, backend=JunctionTree())[1].table[] ==
               0
     end

@@ -95,7 +95,15 @@
     @testset "normalize and reorder" begin
         n = normalize(f)
         @test sum(n.table) ≈ 1 && n.table ≈ f.table ./ sum(f.table)
-        @test_throws KernelNormalizationError normalize(Factor(a, [0.0, 0.0]))
+        # a zero total is an ArgumentError naming the scope, as for a kernel column
+        # (ADR 0012); posterior code raises ImpossibleEvidenceError before reaching it
+        @test_throws ArgumentError normalize(Factor(a, [0.0, 0.0]))
+        zero_total = try
+            normalize(Factor(a, [0.0, 0.0]))
+        catch e
+            e
+        end
+        @test occursin("[:A]", sprint(showerror, zero_total))
         r = reorder(f, [:B, :A])
         @test scope(r) == [:B, :A] && r.table == permutedims(f.table)
         @test reorder(f, [:A, :B]) === f

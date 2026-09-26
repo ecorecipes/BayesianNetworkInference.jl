@@ -33,9 +33,12 @@ distribution `P(Y | do(X = x))`, while `infer(observe(m, :X => :x), :Y)` is
 the conditional `P(Y | X = x)`.
 
 Throws [`CompileError`](@ref) (or a `BayesianNetworks` exception) when the
-model cannot be compiled, and [`ScopeError`](@ref) for unknown or repeated
+model cannot be compiled, [`ScopeError`](@ref) for unknown or repeated
 query variables, unknown evidence variables, or a query variable that also
-carries evidence.
+carries evidence, and `BayesianNetworks.ImpossibleEvidenceError` for a
+non-empty query when the evidence has zero computed probability, as
+`BayesianNetworks.marginal` does. Plain [`BeliefPropagation`](@ref) detects
+only local zero support; see [`belief_propagation`](@ref).
 
 ```jldoctest
 julia> using BayesianNetworks

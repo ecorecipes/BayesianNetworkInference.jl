@@ -86,8 +86,9 @@ sum-product fixed points on feasible conditioned trees ([`is_tree`](@ref))
 are exact, while loopy beliefs are approximations. It has damping, a
 tolerance, an iteration cap and
 [`BPDiagnostics`](@ref). VE/JT posterior entry points reject globally zero mass,
-including disconnected components and all-observed cases. BP detects local
-zero-support failures but otherwise leaves global feasibility unknown unless
+including disconnected components and all-observed cases, with
+`ImpossibleEvidenceError`. BP detects local zero-support failures, with the same
+error, but otherwise leaves global feasibility unknown unless
 `BeliefPropagation(check_evidence=true)` requests a VE feasibility pass.
 `evidence_checked` records that choice. Its residual is measured before damping
 in the message equations at the returned iterate, not from a tiny damped step,
@@ -136,8 +137,35 @@ range a single finding could move the answer.
 
 All failures are typed exceptions carrying the offending names:
 [`ScopeError`](@ref), [`ShapeError`](@ref), [`CompileError`](@ref) (a model
-that is open or lacks kernels), `FiniteKernels`' `KernelNormalizationError` and
-`InvalidAxisError`, and the exceptions of `BayesianNetworks.validate`.
+that is open or lacks kernels), `FiniteKernels`' `KernelNormalizationError`
+(kernel columns that do not sum to one) and `InvalidAxisError`, and the
+exceptions of `BayesianNetworks.validate`.
+
+Evidence of zero computed probability raises `BayesianNetworks`'
+`ImpossibleEvidenceError`, which this package re-exports, carrying the
+evidence. It is the one zero-mass error of every posterior entry point
+(ADR 0012): variable elimination, brute force, the junction tree, belief
+propagation (a zero message, belief or conditioned scalar, and
+`check_evidence=true`), both log-domain backends, and everything built on them,
+from [`posterior`](@ref) to [`predict`](@ref) and [`tornado`](@ref). It is the
+same error `BayesianNetworks.marginal` raises, so one `catch` covers both:
+
+```julia
+try
+    infer(m, :Rain; evidence=Dict(:Grass => :wet))
+catch e
+    e isa ImpossibleEvidenceError || rethrow()
+    @info "no posterior" e.evidence
+end
+```
+
+Until a later ADR, the paths that form the evidence mass in ordinary
+arithmetic (variable elimination, the junction tree, brute force, and belief
+propagation with `check_evidence`) also raise it for a positive mass that
+underflowed. [`LogVariableElimination`](@ref) and [`LogJunctionTree`](@ref)
+answer such queries instead, and [`log_evidence_probability`](@ref) returns
+`-Inf` only for evidence that is exactly impossible. An empty query never
+raises: it returns the unnormalised mass, which may be zero.
 
 ## References
 

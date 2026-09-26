@@ -63,12 +63,20 @@ end
         @test_throws ScopeError predict(fg2, cs2, :Nope)
         @test_throws ScopeError predict(fg2, cs2, :B; evidence_vars=[:Nope])
         @test_throws ScopeError predict(fg2, cs2, :B; evidence_vars=[:A, :B])
-        # impossible evidence names the case
+        # impossible evidence raises the one zero-mass error, carrying the failing case's
+        # merged evidence with the target withheld (ADR 0012)
         zero_fg = FactorGraph([Factor(FiniteAxis(:A, [:a1, :a2]), [0.0, 1.0]),
                                Factor([FiniteAxis(:A, [:a1, :a2]),
                                        FiniteAxis(:B, [:b1, :b2])], [0.5 0.5; 0.2 0.8])])
-        @test_throws KernelNormalizationError predict(zero_fg,
-                                                      [Dict(:A => :a1, :B => :b1)], :B)
+        @test_throws ImpossibleEvidenceError predict(zero_fg,
+                                                     [Dict(:A => :a1, :B => :b1)], :B)
+        err = try
+            predict(zero_fg, [Dict(:A => :a2, :B => :b1), Dict(:A => :a1, :B => :b1)], :B)
+        catch e
+            e
+        end
+        @test err isa ImpossibleEvidenceError
+        @test err.evidence == Dict(:A => :a1)
     end
 
     @testset "hand-computed scores" begin

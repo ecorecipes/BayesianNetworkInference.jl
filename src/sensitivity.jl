@@ -175,9 +175,12 @@ order a tornado plot draws them in.
 
 Where [`sensitivity`](@ref) averages over what `X` might turn out to be, this
 reports the extremes, so it answers "how far could one observation move the
-answer?" rather than "how much would it tell me on average". States that are
-impossible given the evidence are skipped; a variable with no possible state
-is omitted.
+answer?" rather than "how much would it tell me on average". A state whose
+finding is impossible given the evidence (its query throws
+`BayesianNetworks.ImpossibleEvidenceError`) is skipped, and a variable with no
+possible state is omitted. The evidence itself is checked first: if it is
+impossible, `ImpossibleEvidenceError` is thrown rather than an empty table
+returned.
 
 This is a sensitivity to findings, not to parameters: it does not perturb any
 CPT.
@@ -193,6 +196,10 @@ function tornado(fg::FactorGraph, target::Symbol, state::Symbol;
     candidates = variables === nothing ? _variables(fg.factors) :
                  collect(Symbol, variables)
     candidates = Symbol[v for v in candidates if v != target && !haskey(evidence, v)]
+    # Impossible base evidence makes every finding impossible, and skipping them all would
+    # answer, with an empty table, a question that has no answer. Query it once, so that
+    # the skip below only ever drops findings that the evidence rules out.
+    infer(fg, [target]; evidence, backend)
     rows = NamedTuple{(:variable, :low, :high, :range, :low_state, :high_state),
                       Tuple{Symbol,Float64,Float64,Float64,Symbol,Symbol}}[]
     for v in candidates
@@ -203,7 +210,7 @@ function tornado(fg::FactorGraph, target::Symbol, state::Symbol;
             p = try
                 first(infer(fg, [target]; evidence=ev, backend)).table[k]
             catch e
-                e isa KernelNormalizationError && continue   # impossible finding
+                e isa ImpossibleEvidenceError && continue   # impossible finding
                 rethrow()
             end
             (worst === nothing || p < worst[1]) && (worst = (p, label))

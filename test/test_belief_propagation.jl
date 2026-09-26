@@ -132,12 +132,12 @@
                                   Factor([a, b], [1/3 1/3 1/3; 0.5 0.25 0.25])])
         ev = Dict(:A => :a1)
         # the empty-scope route: conditioning the prior leaves the scalar 0
-        @test_throws KernelNormalizationError belief_propagation(zero_prior; evidence=ev)
+        @test_throws ImpossibleEvidenceError belief_propagation(zero_prior; evidence=ev)
         for backend in (VariableElimination(), JunctionTree(), BeliefPropagation())
-            @test_throws KernelNormalizationError infer(zero_prior, :B; evidence=ev,
-                                                        backend=backend)
-            @test_throws KernelNormalizationError all_marginals(zero_prior; evidence=ev,
-                                                                backend=backend)
+            @test_throws ImpossibleEvidenceError infer(zero_prior, :B; evidence=ev,
+                                                       backend=backend)
+            @test_throws ImpossibleEvidenceError all_marginals(zero_prior; evidence=ev,
+                                                               backend=backend)
         end
         # the non-empty-scope route: `either` is deterministic in asia, so
         # lung = yes with either = no has probability zero and the conditioned
@@ -145,8 +145,8 @@
         det = Dict(:lung => :yes, :either => :no)
         @test brute_force_marginal(fg, Symbol[]; evidence=det).table[] == 0
         for backend in (VariableElimination(), JunctionTree(), BeliefPropagation())
-            @test_throws KernelNormalizationError infer(fg, :dysp; evidence=det,
-                                                        backend=backend)
+            @test_throws ImpossibleEvidenceError infer(fg, :dysp; evidence=det,
+                                                       backend=backend)
         end
         # possible evidence on the same variables still works everywhere
         ok = Dict(:lung => :yes, :either => :yes)

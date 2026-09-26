@@ -372,9 +372,13 @@ function _containing_clique(jt::CompiledJunctionTree, axes, query)
     return best == 0 ? nothing : best
 end
 
-# Callers check the global mass before reading a single component's posterior.
-function _belief_marginal(belief::Factor, query)
-    return normalize(reorder(_project(belief, collect(Symbol, query)), query))
+# Callers check the global mass before reading a single component's posterior. The
+# belief's own mass is checked again as it is normalised, so a clique whose sum is zero
+# although the global mass was positive raises the same `ImpossibleEvidenceError` rather
+# than `normalize`'s `ArgumentError`.
+function _belief_marginal(belief::Factor, query, evidence)
+    return _posterior_normalize(reorder(_project(belief, collect(Symbol, query)), query),
+                                evidence)
 end
 
 function _infer(backend::JunctionTree, fg::FactorGraph{T}, query, evidence) where {T}
@@ -395,7 +399,7 @@ function _infer(backend::JunctionTree, fg::FactorGraph{T}, query, evidence) wher
     end
     cal = calibrate(fg, jt; evidence)
     _require_evidence_mass(cal.evidence_probability, evidence)
-    return _belief_marginal(cal.beliefs[c], query), _diagnostics(cal, c)
+    return _belief_marginal(cal.beliefs[c], query, evidence), _diagnostics(cal, c)
 end
 
 """
@@ -405,8 +409,8 @@ end
 The posterior `P(clique | evidence)` of every clique of the junction tree of
 `fg` (in the order of `build_junction_tree(fg; order=backend.order).cliques`),
 as normalised factors whose scopes are the cliques minus the evidence
-variables. Throws `FiniteKernels.KernelNormalizationError` if the evidence has
-probability zero.
+variables. Throws `BayesianNetworks.ImpossibleEvidenceError` if the evidence
+has zero computed probability.
 """
 function clique_beliefs(fg::FactorGraph;
                         evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
@@ -417,7 +421,7 @@ end
 function _clique_beliefs(backend::JunctionTree, fg::FactorGraph, evidence)
     cal = calibrate(fg, build_junction_tree(fg; order=backend.order); evidence)
     _require_evidence_mass(cal.evidence_probability, evidence)
-    return map(normalize, cal.beliefs)
+    return [_posterior_normalize(belief, evidence) for belief in cal.beliefs]
 end
 
 """
@@ -451,7 +455,7 @@ function _all_marginals(backend::JunctionTree, fg::FactorGraph{T}, evidence) whe
         if haskey(evidence, v)
             out[v] = _point_mass(R, ax, evidence[v])
         else
-            out[v] = _belief_marginal(cal.beliefs[jt.home[v]], [v])
+            out[v] = _belief_marginal(cal.beliefs[jt.home[v]], [v], evidence)
         end
     end
     return out

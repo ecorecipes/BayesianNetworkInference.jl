@@ -165,7 +165,8 @@ marginalization. Positive common scales are kept outside the tables so they
 cannot erase small differences between posterior cells. For an empty query,
 return the ordinary unnormalized mass (possibly zero by underflow); the finite
 log mass remains available in the diagnostics. A nonempty query with truly
-zero support throws `KernelNormalizationError`.
+zero support (`mass_status == :zero`) throws
+`BayesianNetworks.ImpossibleEvidenceError`; an underflowed mass does not.
 """
 function log_variable_elimination(fg::FactorGraph, query::AbstractVector{Symbol};
                                   evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),

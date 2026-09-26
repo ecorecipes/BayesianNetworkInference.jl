@@ -30,10 +30,10 @@
     impossible = FactorGraph([Factor(a, [1.0, 0.0]), Factor(c, [0.25, 0.75])])
     ev = Dict(:A => :usual)
     @test log_evidence_probability(impossible; evidence=ev) == -Inf
-    @test_throws KernelNormalizationError infer(impossible, :C; evidence=ev,
-                                                backend=LogVariableElimination())
-    @test_throws KernelNormalizationError all_marginals(impossible; evidence=ev,
-                                                        backend=LogVariableElimination())
+    @test_throws ImpossibleEvidenceError infer(impossible, :C; evidence=ev,
+                                               backend=LogVariableElimination())
+    @test_throws ImpossibleEvidenceError all_marginals(impossible; evidence=ev,
+                                                       backend=LogVariableElimination())
     @test last(infer(impossible, Symbol[]; evidence=ev, backend=LogVariableElimination())).mass_status ==
           :zero
 
@@ -58,6 +58,7 @@
         exact = FactorGraph([Factor(f.axes, Rational{BigInt}.(f.table)) for f in factors])
         for query in ([:C], [:C, :A]),
             evidence in (Dict{Symbol,Symbol}(), Dict(:B => :rare))
+
             expected = brute_force_marginal(exact, query; evidence)
             for order in (MinFill(), MinDegree(), ExactTreewidth())
                 actual, _ = infer(graph, query; evidence,
