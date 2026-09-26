@@ -177,5 +177,6 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
 
 ## Style
 
-JuliaFormatter `yas`; docstrings on every exported name; typed exceptions with variable names in the message;
-no emojis in code or docs.
+JuliaFormatter `yas`; docstrings on every exported name, which `test/test_docstrings.jl` enforces; the docs
+build is strict (no `warnonly`), so a docstring left out of the manual or a broken `@ref` fails it; typed
+exceptions with variable names in the message; no emojis in code or docs.
