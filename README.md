@@ -68,9 +68,10 @@ with `BayesianNetworkFormats.jl` (file formats) and `EcologicalBayesianNetworks.
   index splits (with `by` for grouped spatial or temporal holdout), and `evaluate` for the lot in one table.
 - Sensitivity analysis: `entropy`, `mutual_information`, `sensitivity` (Marcot 2012's entropy-reduction
   ranking of every variable against a target) and `tornado` (the range one finding could move an answer).
-- Typed exceptions (`ScopeError`, `ShapeError`, `CompileError`, `ImpossibleEvidenceError` from
-  `BayesianNetworks.jl` for evidence of zero computed probability, plus `KernelNormalizationError` /
-  `InvalidAxisError` from `FiniteKernels.jl`) carrying the offending variable names or evidence.
+- Typed exceptions (`ScopeError`, `ShapeError`, `CompileError` and `LogFactorDomainError` under the root
+  `InferenceError <: BayesNetError`, `ImpossibleEvidenceError` from `BayesianNetworks.jl` for evidence of
+  zero computed probability, plus `KernelNormalizationError` / `InvalidAxisError` from `FiniteKernels.jl`)
+  carrying the offending variable names or evidence; the re-exported `AnyBayesNetError` catches them all.
 
 ## Exact finite-model proof scope
 

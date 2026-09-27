@@ -25,5 +25,6 @@ include("networks.jl")
     include("test_scores.jl")
     include("test_sensitivity.jl")
     include("test_regressions.jl")
+    include("test_errors.jl")
     include("test_docstrings.jl")
 end

@@ -135,11 +135,16 @@ range a single finding could move the answer.
 
 ## Errors
 
-All failures are typed exceptions carrying the offending names:
-[`ScopeError`](@ref), [`ShapeError`](@ref), [`CompileError`](@ref) (a model
-that is open or lacks kernels), `FiniteKernels`' `KernelNormalizationError`
+All failures are typed exceptions carrying the offending names. The
+package's own, [`ScopeError`](@ref), [`ShapeError`](@ref),
+[`CompileError`](@ref) (a model that is open or lacks kernels) and
+[`LogFactorDomainError`](@ref) (a factor entry the log domain cannot take),
+subtype [`InferenceError`](@ref), which subtypes `BayesianNetworks`'
+`BayesNetError` (ADR 0013). `FiniteKernels`' `KernelNormalizationError`
 (kernel columns that do not sum to one) and `InvalidAxisError`, and the
-exceptions of `BayesianNetworks.validate`.
+exceptions of `BayesianNetworks.validate`, pass through unchanged; the
+re-exported `AnyBayesNetError` catches every one of them. Invalid arguments
+and keywords raise `ArgumentError`, which is outside every root.
 
 Evidence of zero computed probability raises `BayesianNetworks`'
 `ImpossibleEvidenceError`, which this package re-exports, carrying the

@@ -54,7 +54,8 @@ using FiniteKernels
 using FiniteKernels: labels, label_index
 using BayesianNetworks: BayesianNetworks, BayesModel, syntax, variable_name, mechanism_of,
                         mechanism_name, inputs, topological_order, exogenous,
-                        missing_kernels, kernel, states, ImpossibleEvidenceError
+                        missing_kernels, kernel, states, BayesNetError, AnyBayesNetError,
+                        BayesianNetworkFormatsError, ImpossibleEvidenceError
 # Names shared with BayesianNetworks.jl are extended, not shadowed, so that
 # `using BayesianNetworks, BayesianNetworkInference` never needs qualification.
 import BayesianNetworks: variables, axis, empirical_marginal
@@ -79,7 +80,7 @@ import Graphs: is_tree            # extended with a FactorGraph method, never sh
 
 # Factors
 export Factor, scope, axis, unit_factor, multiply, marginalize, maximize, argmax_table,
-       condition, normalize, reorder, ScopeError, ShapeError
+       condition, normalize, reorder
 # Factor graphs
 export FactorGraph, variables, interaction_graph
 # Orderings
@@ -88,7 +89,7 @@ export EliminationStrategy, MinFill, MinDegree, ExactTreewidth, AMDOrder, UserOr
 # Inference
 export InferenceBackend, VariableElimination, InferenceDiagnostics, variable_elimination,
        infer, joint_factor, brute_force_marginal, LogVariableElimination,
-       LogInferenceDiagnostics, LogFactorDomainError, log_variable_elimination,
+       LogInferenceDiagnostics, log_variable_elimination,
        log_evidence_probability
 export trace_variable_elimination
 # Junction trees and belief propagation
@@ -100,7 +101,7 @@ export JunctionTree, CompiledJunctionTree, CalibratedJunctionTree, JunctionTreeD
 # Sampling
 export AncestralSamples, ancestral_sample, empirical_marginal
 # Model bridge (BayesianNetworks.jl)
-export FactorGraphBackend, CompileError, compile, posterior
+export FactorGraphBackend, compile, posterior
 # Validation and scoring
 export Case, Cases, Predictions, predict, baseline, brier_score, log_score,
        spherical_score, CalibrationCurve, calibration_curve, calibration_error, ROCCurve,
@@ -108,13 +109,25 @@ export Case, Cases, Predictions, predict, baseline, brier_score, log_score,
        EvaluationResult, evaluate
 # Sensitivity analysis
 export entropy, mutual_information, sensitivity, tornado
+# Exceptions (errors.jl): the root and the four types this package defines
+export InferenceError, ScopeError, ShapeError, CompileError, LogFactorDomainError
 # Re-exported from FiniteKernels for convenience
-export FiniteAxis, FiniteSpace, FiniteKernel, cpt, KernelNormalizationError
-# Re-exported from BayesianNetworks: the one error every posterior entry point raises for
-# evidence of zero computed probability (ADR 0012). The binding is BayesianNetworks' own,
-# never a second definition, so it stays unambiguous and prints unqualified.
-export ImpossibleEvidenceError
+export FiniteAxis, FiniteSpace, FiniteKernel, cpt
+# Re-exported exception roots and types (ADR 0013). Factors and the kernel conversions
+# raise FiniteKernels' errors, so every exception type FiniteKernels exports is
+# re-exported (test/test_errors.jl checks for drift). From BayesianNetworks: the root
+# `BayesNetError`, which `InferenceError` subtypes, the `AnyBayesNetError` union, and
+# `ImpossibleEvidenceError`, the one error every posterior entry point raises for evidence
+# of zero computed probability (ADR 0012). Every binding is its owner's, never a second
+# definition, so the names stay unambiguous and print unqualified. Of
+# BayesianNetworkFormats only the root `BayesianNetworkFormatsError` is re-exported, never
+# its concrete types (ADR 0013 decision 2): the conformance adapters load this package with
+# `using` and serialise Formats' errors by their qualified names.
+export FiniteKernelsError, InvalidAxisError, KernelShapeError, KernelEntryError,
+       KernelNormalizationError, SpaceMismatchError
+export BayesNetError, AnyBayesNetError, BayesianNetworkFormatsError, ImpossibleEvidenceError
 
+include("errors.jl")  # first: its field types all come from Base
 include("factors.jl")
 include("factor_graph.jl")
 include("orderings.jl")

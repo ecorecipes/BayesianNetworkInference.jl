@@ -48,6 +48,17 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   raised through `_require_evidence_mass` / `_posterior_normalize` in `variable_elimination.jl`
   with the test `mass <= 0`, so NaN is not impossibility (ADR 0012). `normalize(::Factor)` on a
   zero total is an `ArgumentError`; `KernelNormalizationError` means only kernel columns.
+- Every exception type this package defines lives in `src/errors.jl` and subtypes `InferenceError <:
+  BayesianNetworks.BayesNetError` (ADR 0013). `ScopeError` is a frozen name: the pinned
+  constructor-schedules checker (`NativeOrderRecords.v`) compares the recorded `string(typeof(e))` with
+  `"ScopeError"`, so it keeps its name, its defining module (this one) and its unqualified printing
+  under `using BayesianNetworks, BayesianNetworkInference`. Never move it, rename it or export a second
+  binding. Re-exports are the owners' own bindings: every exception type FiniteKernels exports, and
+  BayesianNetworks' `BayesNetError`, `AnyBayesNetError` and `ImpossibleEvidenceError`
+  (`test/test_errors.jl` checks for drift). Of BayesianNetworkFormats only the root
+  `BayesianNetworkFormatsError` is re-exported, never its concrete types: the conformance adapters
+  load this package with `using`, and the inspect adapter records Formats' types under their
+  qualified names.
 - BP convergence uses the undamped residual at the returned iterate, not the damped step and not a
   marginal-error bound. `check_evidence=true` opts into VE feasibility; `evidence_checked=false`
   leaves global feasibility unknown. Integer inputs promote to division-compatible types.
@@ -57,7 +68,11 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
 
 ## Layout
 
-- `src/factors.jl`: `Factor`, `ScopeError`, `ShapeError`, `unit_factor`, `scope`, `axis`, `multiply`, `marginalize`,
+- `src/errors.jl` (included first): the root `InferenceError <: BayesNetError` and the four exception types
+  with their `showerror` methods: `ScopeError` and `ShapeError` (factor scopes and table shapes, and the
+  argument checks of the entry points built on them), `CompileError` (open model / missing kernels, naming
+  the variables) and `LogFactorDomainError` (a factor entry the log domain cannot take).
+- `src/factors.jl`: `Factor`, `unit_factor`, `scope`, `axis`, `multiply`, `marginalize`,
   `maximize`, `argmax_table`, `condition`, `normalize` (extends `LinearAlgebra.normalize`), `reorder`, kernel conversions.
 - `src/factor_graph.jl`: `FactorGraph` (factors, axes, provenance), `variables`, `interaction_graph` (Graphs.SimpleGraph
   plus variable/vertex maps; already the moral graph).
@@ -73,7 +88,7 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   do not mutate `fg.factors` after a query.
   `infer`, oracle `joint_factor` / `brute_force_marginal`.
 - `src/log_variable_elimination.jl`: `LogVariableElimination` backend,
-  `LogInferenceDiagnostics`, `LogFactorDomainError`, `log_variable_elimination`,
+  `LogInferenceDiagnostics`, `log_variable_elimination`,
   `log_evidence_probability`. The same elimination algorithm as `variable_elimination.jl`
   carried out in the log domain, for models whose joint underflows Float64. Keep the two in
   step: they are written out twice, and a fix applied to one and not the other is how
@@ -98,8 +113,8 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   `is_tree` (extends `Graphs.is_tree`; forest check of the bipartite factor graph; `BPDiagnostics.tree` reports it per run after conditioning),
   `infer` for single-variable queries only (`ScopeError` otherwise).
 - `src/sampling.jl`: `AncestralSamples`, `ancestral_sample(kernels, order, parents, n; rng)`, `empirical_marginal`.
-- `src/compile.jl`: `FactorGraphBackend`, `CompileError` (open model / missing kernels, naming the variables),
-  `compile(m::BayesModel)`, internal `_model_kernels(m)` shared with sampling.
+- `src/compile.jl`: `FactorGraphBackend`, `compile(m::BayesModel)` (`CompileError` for an open model or
+  missing kernels), internal `_model_kernels(m)` shared with sampling.
 - `src/model_inference.jl`: `infer(m::BayesModel, query; evidence, backend)`, `posterior(m, var)` (state => probability),
   `all_marginals(m; evidence, backend)`,
   `ancestral_sample(m, n; rng)`, `AncestralSamples(m, samples)` (converts `BayesianNetworks.sample` output),
@@ -137,7 +152,12 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   and on models whose joint underflows Float64); `test/test_execution_trace.jl`;
   `test/test_regressions.jl` (the ADR 0011 suite: the obstructions that composition and
   reassociation are known to have, pinned so they cannot be quietly "fixed"; and ADR 0012's
-  matrix: one impossible model gives `ImpossibleEvidenceError` from every entry point).
+  matrix: one impossible model gives `ImpossibleEvidenceError` from every entry point);
+  `test/test_errors.jl` (every owned exception type is an `InferenceError`, keeps this module and prints
+  bare, `ScopeError` among them; the drift test that every FiniteKernels exception type and BN's root,
+  union and zero-mass error and Formats' root are re-exported as the same bindings and no concrete Formats exception type is; real
+  errors of each layer against the roots; the structural `==`/`hash` inherited from `BayesNetError`);
+  `test/test_docstrings.jl` (every exported name this package owns has a docstring).
 - `vignettes/`: 01 factors and VE (ends with the model-level Demo 1: `.dne` -> `infer` -> `do` -> `.xdsl`),
   02 orderings, 03 sampling and Monte Carlo checks, 04 junction trees and belief propagation,
   05 validation and scoring (simulate cases, grouped holdout, calibration, prior baseline, mutual information),

@@ -1,41 +1,7 @@
 # Finite factors: unnormalised tensors over an ordered variable scope, and the
 # (multiply, marginalise, condition, ...) algebra used by variable elimination.
 
-"""
-    ScopeError(operation, msg, vars)
-
-Thrown when the variables handed to `operation` (a `Symbol`) are not compatible
-with the scope of a factor: unknown variables, duplicates, or an order that is
-not a permutation of the scope. `vars` lists the offending variables.
-"""
-struct ScopeError <: Exception
-    operation::Symbol
-    msg::String
-    vars::Vector{Symbol}
-end
-
-function Base.showerror(io::IO, e::ScopeError)
-    return print(io, "ScopeError in ", e.operation, ": ", e.msg, " (variables ", e.vars,
-                 ")")
-end
-
-"""
-    ShapeError(operation, msg, expected, got)
-
-Thrown when a table does not have the shape implied by its axes, or when two
-factors disagree about the states of a shared variable.
-"""
-struct ShapeError <: Exception
-    operation::Symbol
-    msg::String
-    expected::Any
-    got::Any
-end
-
-function Base.showerror(io::IO, e::ShapeError)
-    return print(io, "ShapeError in ", e.operation, ": ", e.msg, " (expected ", e.expected,
-                 ", got ", e.got, ")")
-end
+# `ScopeError` and `ShapeError` are defined in errors.jl.
 
 """
     Factor{T<:Real}(vars::Vector{Symbol}, axes::Vector{FiniteAxis}, table::Array{T})

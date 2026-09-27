@@ -9,24 +9,7 @@ factor per mechanism of the model.
 """
 struct FactorGraphBackend end
 
-"""
-    CompileError(msg, variables)
-
-Thrown by [`compile`](@ref) when a `BayesModel` cannot be turned into a factor
-graph: it is open (`variables` are the exogenous variables, which have no
-mechanism) or some mechanisms have no kernel (`variables` are their targets,
-see `BayesianNetworks.missing_kernels`). Structural problems (cycles,
-duplicate names) and ill-fitting kernels are reported by
-`BayesianNetworks.validate` with its own typed exceptions.
-"""
-struct CompileError <: Exception
-    msg::String
-    variables::Vector{Symbol}
-end
-
-function Base.showerror(io::IO, e::CompileError)
-    return print(io, "CompileError: ", e.msg, " (variables ", e.variables, ")")
-end
+# `CompileError` is defined in errors.jl.
 
 # The kernels, topological order and parent names of a closed model with full
 # semantics, in the shape that `ancestral_sample` and `compile` consume.

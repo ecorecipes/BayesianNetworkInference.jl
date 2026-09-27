@@ -55,7 +55,6 @@ joint_factor
 brute_force_marginal
 LogVariableElimination
 LogInferenceDiagnostics
-LogFactorDomainError
 log_variable_elimination
 log_evidence_probability
 trace_variable_elimination
@@ -149,8 +148,25 @@ tornado
 
 ## Exceptions
 
+Every exception type this package defines subtypes [`InferenceError`](@ref), which
+subtypes BayesianNetworks.jl's root `BayesNetError` (ADR 0013), so a `catch` on either
+root covers them. Typed errors of the lower packages pass through unchanged, and their
+roots are re-exported. From BayesianNetworks.jl: the root `BayesNetError`, the union
+`AnyBayesNetError`, which catches every typed exception of the ecosystem, and
+`ImpossibleEvidenceError`, the one error every posterior entry point raises for evidence
+of zero computed probability (ADR 0012); they are documented in the BayesianNetworks.jl
+API reference. From FiniteKernels.jl, whose errors the factor API raises for an unknown
+label and the kernel conversion raises for a factor that is not a kernel: the root
+`FiniteKernelsError` and its five types `InvalidAxisError`, `KernelShapeError`,
+`KernelEntryError`, `KernelNormalizationError` and `SpaceMismatchError`, documented in the
+FiniteKernels.jl API reference. From BayesianNetworkFormats.jl, only the root
+`BayesianNetworkFormatsError`; its concrete types are not re-exported. Invalid arguments and
+keywords raise Base's `ArgumentError`, outside every root.
+
 ```@docs
+InferenceError
 ScopeError
 ShapeError
 CompileError
+LogFactorDomainError
 ```

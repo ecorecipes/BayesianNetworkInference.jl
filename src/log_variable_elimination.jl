@@ -13,22 +13,7 @@ function LogVariableElimination(; order::EliminationStrategy=MinFill())
     return LogVariableElimination(order)
 end
 
-"""
-    LogFactorDomainError(vars, index, value)
-
-A log-domain input factor has a negative/nonfinite entry, or an entry whose
-logarithm cannot be represented. The offending scope and table index are retained.
-Small negative values are rejected, not clamped to zero.
-"""
-struct LogFactorDomainError <: Exception
-    vars::Vector{Symbol}
-    index::Tuple
-    value::Real
-end
-function Base.showerror(io::IO, error::LogFactorDomainError)
-    return print(io, "LogFactorDomainError: factor over ", error.vars, " at ",
-                 error.index, " has unsupported value ", error.value)
-end
+# `LogFactorDomainError` is defined in errors.jl.
 
 """
     LogInferenceDiagnostics(order, max_factor_size, n_multiplications, treewidth,
