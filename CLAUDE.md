@@ -184,4 +184,7 @@ julia scripts/sync_vignettes.jl [--check]                         # copy vignett
 
 JuliaFormatter `yas`; docstrings on every exported name, which `test/test_docstrings.jl` enforces; the docs
 build is strict (no `warnonly`), so a docstring left out of the manual or a broken `@ref` fails it; typed
-exceptions with variable names in the message; no emojis in code or docs.
+exceptions with variable names in the message, following ADR 0013: they live in `src/errors.jl` and subtype
+the nearest root (`FiniteKernelsError`, `BayesianNetworkFormatsError` or `BayesNetError`), invalid arguments
+and keywords raise `ArgumentError`, typed errors from a lower package pass through unchanged and documented,
+and another package's type is named as a code span, never with `@ref`; no emojis in code or docs.

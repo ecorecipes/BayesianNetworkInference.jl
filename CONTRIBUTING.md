@@ -23,7 +23,13 @@ julia --project -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
 - Format with JuliaFormatter using the repository `.JuliaFormatter.toml` (`style = "yas"`).
 - `snake_case` for functions and variables, `CamelCase` for types, a leading underscore for internal helpers.
 - Public functions have docstrings with a signature line, a one-sentence summary, and an example where practical.
-- Errors are typed exceptions carrying the offending variable / mechanism names, never bare `error("...")` in library code.
+- Errors follow ADR 0013. Exceptions are typed, carry the offending variable / mechanism names, and live in
+  `src/errors.jl`; library code never calls a bare `error("...")`. Each exception subtypes the nearest root:
+  `FiniteKernelsError`, `BayesianNetworkFormatsError` or `BayesNetError` (a package with two or more types of its
+  own adds an abstract type under it). Invalid arguments and keywords raise `ArgumentError`. A typed error from a
+  lower package passes through unchanged, and the docstring of the function that raises it says so, unless this
+  package wraps it to add information such as the variable. A docstring names another package's type as a code
+  span, never with `@ref`.
 - Every optimised code path is tested against a slower reference implementation on small models.
 
 ## Adding a vignette
