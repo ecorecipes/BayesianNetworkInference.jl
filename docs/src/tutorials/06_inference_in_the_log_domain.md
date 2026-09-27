@@ -245,20 +245,29 @@ floatmin(Float64), exp(-785.2)
 
     (2.2250738585072014e-308, 0.0)
 
-Two further limits, both deliberate. Factor entries must be nonnegative
-and finite — a negative entry has no logarithm, and the layer raises
+Two further limits, both deliberate. A factor graph rejects an entry
+that is not finite or is negative by more than its tolerance when it is
+built (`FactorEntryError`), exactly as a kernel does. An entry a hair
+below zero — the kind rounding produces, within the tolerance — is a
+valid entry, but it has no logarithm, so the log backends reject it
 rather than silently producing `NaN`:
 
 ``` julia
-try
-    infer(FactorGraph([Factor(FiniteAxis(:X, [:a, :b]), [0.5, -0.5])]), [:X];
-          backend = LogVariableElimination())
-catch e
-    typeof(e)
-end
+X = FiniteAxis(:X, [:a, :b])
+(invalid = try
+     FactorGraph([Factor(X, [0.5, -0.5])])
+ catch e
+     typeof(e)
+ end,
+ rounded_negative = try
+     infer(FactorGraph([Factor(X, [1.0 + 1e-12, -1e-12])]), [:X];
+           backend = LogVariableElimination())
+ catch e
+     typeof(e)
+ end)
 ```
 
-    LogFactorDomainError
+    (invalid = FactorEntryError, rounded_negative = LogFactorDomainError)
 
 And an empty query keeps the ordinary unnormalised-mass API, with the
 log mass available in the diagnostics rather than replacing the returned
