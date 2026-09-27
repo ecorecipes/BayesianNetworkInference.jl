@@ -18,7 +18,15 @@
     @test trace["result"]["values"] isa Vector{String}
     @test_throws ScopeError trace_variable_elimination(graph, :B; max_entries=1)
     @test_throws ScopeError trace_variable_elimination(graph, :B; evidence=Dict(:B => :off))
-    @test_throws ScopeError trace_variable_elimination(FactorGraph([Factor(a, [-0.1, 1.1])]),
+    # An entry below -atol is rejected when the graph is built; one within the tolerance
+    # builds, and the trace's own non-negativity guard still rejects it.
+    @test_throws FactorEntryError FactorGraph([Factor(a, [-0.1, 1.1])])
+    @test_throws ScopeError trace_variable_elimination(FactorGraph([Factor(a,
+                                                                           [-0.1, 1.1])];
+                                                                   check=false), :A)
+    @test_throws ScopeError trace_variable_elimination(FactorGraph([Factor(a,
+                                                                           [-1e-12,
+                                                                            1.0 + 1e-12])]),
                                                        :A)
     @test_throws ScopeError trace_variable_elimination(FactorGraph([Factor(a,
                                                                            [1 // 4, 3 // 4])]),

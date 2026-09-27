@@ -152,3 +152,26 @@ end
         @test length(Set([CompileError("m", [:X]), CompileError("m", [:X])])) == 1
     end
 end
+
+@testset "FactorGraph entry check (ADR 0013)" begin
+    a = FiniteAxis(:A, [:a0, :a1])
+    e = try
+        FactorGraph([Factor(a, [1.5, -0.5])])
+    catch err
+        err
+    end
+    @test e isa FactorEntryError && e isa InferenceError
+    @test e.vars == [:A] && e.value == -0.5 && Tuple(e.index) == (2,)
+    # Before the check, VE returned [1.5, -0.5] as a "posterior".
+    @test FactorGraph([Factor(a, [1.5, -0.5])]; check=false) isa FactorGraph
+    @test FactorGraph([Factor(a, [1.0 + 1e-9, -1e-9])]) isa FactorGraph
+    @test_throws FactorEntryError FactorGraph([Factor(a, [1.0 + 1e-6, -1e-6])])
+    @test FactorGraph([Factor(a, [1.0 + 1e-6, -1e-6])]; atol=1e-5) isa FactorGraph
+    # compile uses the unchecked constructor: a model validated at atol = 1e-6 with a
+    # -5e-7 entry still compiles and runs.
+    bn = bayesnet(:X => [:x0, :x1], :Y => [:y0, :y1]; mechanisms=[:Y => [:X]])
+    m = bind_cpt(BayesModel(bn), :X => [0.5, 0.5])
+    m = bind_cpt(m, :Y => [1.0+5e-7 -5e-7; 0.4 0.6]; atol=1e-6)
+    p, _ = infer(m, :Y; atol=1e-6)
+    @test isapprox(sum(p.table), 1.0; atol=1e-9)
+end

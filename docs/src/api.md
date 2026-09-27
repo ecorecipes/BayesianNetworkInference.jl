@@ -169,4 +169,5 @@ ScopeError
 ShapeError
 CompileError
 LogFactorDomainError
+FactorEntryError
 ```

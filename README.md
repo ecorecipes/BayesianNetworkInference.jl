@@ -19,7 +19,8 @@ with `BayesianNetworkFormats.jl` (file formats) and `EcologicalBayesianNetworks.
   `FiniteKernel(f, inputs, outputs)`: a kernel carries an input/output partition and a normalisation invariant,
   a factor is a symmetric tensor under pointwise product and summation.
 - `FactorGraph`: a bag of factors with its interaction (moral) graph as a `Graphs.SimpleGraph` and per-factor
-  provenance.
+  provenance. Its entries must be finite and at least `-atol` (`FactorEntryError` otherwise; `check = false`
+  opts out), the contract a `FiniteKernel` has; `compile` skips the check for an already validated model.
 - The bridge to `BayesianNetworks.jl`: `compile(model; atol=DEFAULT_ATOL)` builds one factor per mechanism
   (first-occurrence parent/child scope, diagonal extraction for repeated input slots,
   provenance `(variable, mechanism, id)`), and `infer(model, query; evidence, backend, atol)`,

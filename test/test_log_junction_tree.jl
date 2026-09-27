@@ -32,8 +32,13 @@
     @test_throws ImpossibleEvidenceError clique_beliefs(impossible;
                                                         evidence=Dict(:A => :low),
                                                         backend=LogJunctionTree())
+    for value in (NaN, Inf)
+        @test_throws FactorEntryError FactorGraph([Factor(a, [value, 1.0]),
+                                                   Factor(c, [0.25, 0.75])])
+    end
     for value in (-eps(), NaN, Inf)
-        invalid = FactorGraph([Factor(a, [value, 1.0]), Factor(c, [0.25, 0.75])])
+        invalid = FactorGraph([Factor(a, [value, 1.0]), Factor(c, [0.25, 0.75])];
+                              check=false)
         @test_throws LogFactorDomainError log_calibrate(invalid; evidence=Dict(:A => :high))
     end
 

@@ -75,7 +75,10 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
 - `src/factors.jl`: `Factor`, `unit_factor`, `scope`, `axis`, `multiply`, `marginalize`,
   `maximize`, `argmax_table`, `condition`, `normalize` (extends `LinearAlgebra.normalize`), `reorder`, kernel conversions.
 - `src/factor_graph.jl`: `FactorGraph` (factors, axes, provenance), `variables`, `interaction_graph` (Graphs.SimpleGraph
-  plus variable/vertex maps; already the moral graph).
+  plus variable/vertex maps; already the moral graph). The keyword constructor checks entries (finite, `>= -atol`,
+  else `FactorEntryError`; `check = false` opts out) once per graph; the inner `FactorGraph{T}(factors, provenance)`
+  never checks and is what `compile` and InfluenceDiagrams' signed ordering graph use. Entries in `[-atol, 0)` are
+  valid here and still rejected by the log backends (`LogFactorDomainError`), a backend-domain restriction.
 - `src/orderings.jl`: `EliminationStrategy` types `MinFill` (CliqueTrees `MF`), `MinDegree` (`MMD`), `AMDOrder` (`AMD`,
   needs `import AMD`), `ExactTreewidth` (`BT`, needs `import TreeWidthSolver`; run per connected component because BT
   fails on isolated vertices), `UserOrder`; `elimination_order(fg, strategy; keep)` via

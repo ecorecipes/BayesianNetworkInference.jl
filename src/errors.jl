@@ -134,3 +134,25 @@ function Base.showerror(io::IO, error::LogFactorDomainError)
     return print(io, "LogFactorDomainError: factor over ", error.vars, " at ",
                  error.index, " has unsupported value ", error.value)
 end
+
+"""
+    FactorEntryError(vars, index, value, atol)
+
+A factor handed to [`FactorGraph`](@ref) has an entry that is not finite or is below
+`-atol`. `vars` is the factor's scope, `index` the entry's position in its table (in
+scope order) and `value` the entry. `FactorGraph(...; check = false)` skips the check.
+"""
+struct FactorEntryError <: InferenceError
+    vars::Vector{Symbol}
+    index::CartesianIndex
+    value::Float64
+    atol::Float64
+end
+
+function Base.showerror(io::IO, e::FactorEntryError)
+    return print(io, "FactorEntryError: the factor over ", e.vars, " has the entry ",
+                 e.value,
+                 " at ", Tuple(e.index),
+                 "; entries of a factor graph must be finite and at least -",
+                 e.atol, " (pass check = false to skip this)")
+end

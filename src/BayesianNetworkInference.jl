@@ -110,7 +110,8 @@ export Case, Cases, Predictions, predict, baseline, brier_score, log_score,
 # Sensitivity analysis
 export entropy, mutual_information, sensitivity, tornado
 # Exceptions (errors.jl): the root and the four types this package defines
-export InferenceError, ScopeError, ShapeError, CompileError, LogFactorDomainError
+export InferenceError, ScopeError, ShapeError, CompileError, LogFactorDomainError,
+       FactorEntryError
 # Re-exported from FiniteKernels for convenience
 export FiniteAxis, FiniteSpace, FiniteKernel, cpt
 # Re-exported exception roots and types (ADR 0013). Factors and the kernel conversions

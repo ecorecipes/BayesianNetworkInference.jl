@@ -1,13 +1,24 @@
 # A bag of factors over shared variables, and its interaction graph.
 
 """
-    FactorGraph{T}(factors::Vector{Factor{T}}; provenance=nothing)
+    FactorGraph(factors; provenance = nothing, check = true, atol = DEFAULT_ATOL)
+    FactorGraph{T}(factors, provenance)
 
 A collection of factors whose product is an (unnormalised) joint distribution.
 `axes` maps every variable to its axis; factors that disagree about the states
 of a shared variable are rejected with [`ShapeError`](@ref). `provenance[i]`
 records where `factors[i]` came from (a mechanism or variable id, filled in by
 the model bridge; `nothing` when built by hand).
+
+With `check = true` (the default) every entry must be finite and at least `-atol`,
+else [`FactorEntryError`](@ref): the same contract a `FiniteKernel` has (ADR 0007), since
+a factor graph's product is meant to be a measure. The check runs once per graph, not per
+query. Entries in `[-atol, 0)` are tolerated, as rounded tables produce them;
+the log-domain backends still reject them with [`LogFactorDomainError`](@ref), because
+they have no logarithm. `check = false` skips the check, and the inner constructor
+`FactorGraph{T}(factors, provenance)` never runs it: [`compile`](@ref) uses it, because
+the model was already validated at its own `atol`, and so does a caller whose factors are
+not a measure (InfluenceDiagrams orders signed utility potentials with one).
 
 ```jldoctest
 julia> a = FiniteAxis(:A, [:a0, :a1]); b = FiniteAxis(:B, [:b0, :b1]);
@@ -51,10 +62,21 @@ function _convert_factor(::Type{T}, f::Factor) where {T}
 end
 
 function FactorGraph(factors::AbstractVector{<:Factor};
-                     provenance::Union{Nothing,AbstractVector}=nothing)
+                     provenance::Union{Nothing,AbstractVector}=nothing, check::Bool=true,
+                     atol::Real=BayesianNetworks.DEFAULT_ATOL)
     T = isempty(factors) ? Float64 : mapreduce(eltype, promote_type, factors)
     prov = provenance === nothing ? fill(nothing, length(factors)) : provenance
+    check && foreach(f -> _check_factor_entries(f, atol), factors)
     return FactorGraph{T}(factors, prov)
+end
+
+function _check_factor_entries(f::Factor, atol::Real)
+    for ci in CartesianIndices(f.table)
+        v = f.table[ci]
+        (isfinite(v) && v >= -atol) ||
+            throw(FactorEntryError(copy(f.vars), ci, Float64(v), Float64(atol)))
+    end
+    return nothing
 end
 
 Base.length(fg::FactorGraph) = length(fg.factors)
