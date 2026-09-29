@@ -33,8 +33,10 @@ Not every exception that this package's functions raise is an `InferenceError`. 
 package adds nothing to a typed error of a lower package, that error passes through
 unchanged:
 
-- `BayesianNetworks`' `ImpossibleEvidenceError`, for evidence of zero computed
-  probability, from every posterior entry point (ADR 0012);
+- `BayesianNetworks`' `ImpossibleEvidenceError`, for evidence of probability exactly
+  zero, from every posterior entry point (ADRs 0012 and 0014), and its
+  `IndeterminatePosteriorError`, when tolerated negative entries leave the posterior
+  undetermined;
 - the exceptions of `BayesianNetworks.validate`, from [`compile`](@ref) and the
   model-level entry points;
 - `FiniteKernels`' errors, under its root `FiniteKernelsError`: `InvalidAxisError` for a

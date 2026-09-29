@@ -179,8 +179,8 @@ evidence.
 
 Throws [`ScopeError`](@ref) if `target` or an evidence variable is not a
 variable of the model, and `BayesianNetworks.ImpossibleEvidenceError`, carrying
-the failing case's merged evidence, if a case's evidence has zero computed
-probability under the model.
+the failing case's merged evidence, if a case's evidence has probability
+exactly zero under the model.
 """
 function predict(fg::FactorGraph, cases, target::Symbol;
                  evidence_vars::Union{Nothing,AbstractVector{Symbol}}=nothing,
