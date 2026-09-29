@@ -64,7 +64,7 @@ jobs:
           julia -e '
             using Pkg
             Pkg.activate(; temp=true)
-            Pkg.add("JuliaFormatter")
+            Pkg.add(name="JuliaFormatter", version="1")
             using JuliaFormatter
             bad = String[]
             for (root, _, files) in walkdir(".")
