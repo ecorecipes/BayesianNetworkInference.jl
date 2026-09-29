@@ -55,7 +55,8 @@ using FiniteKernels: labels, label_index
 using BayesianNetworks: BayesianNetworks, BayesModel, syntax, variable_name, mechanism_of,
                         mechanism_name, inputs, topological_order, exogenous,
                         missing_kernels, kernel, states, BayesNetError, AnyBayesNetError,
-                        BayesianNetworkFormatsError, ImpossibleEvidenceError
+                        BayesianNetworkFormatsError, ImpossibleEvidenceError,
+                        IndeterminatePosteriorError
 # Names shared with BayesianNetworks.jl are extended, not shadowed, so that
 # `using BayesianNetworks, BayesianNetworkInference` never needs qualification.
 import BayesianNetworks: variables, axis, empirical_marginal
@@ -119,14 +120,16 @@ export FiniteAxis, FiniteSpace, FiniteKernel, cpt
 # re-exported (test/test_errors.jl checks for drift). From BayesianNetworks: the root
 # `BayesNetError`, which `InferenceError` subtypes, the `AnyBayesNetError` union, and
 # `ImpossibleEvidenceError`, the one error every posterior entry point raises for evidence
-# of zero computed probability (ADR 0012). Every binding is its owner's, never a second
+# of probability exactly zero (ADR 0012, 0014). Every binding is its owner's, never a second
 # definition, so the names stay unambiguous and print unqualified. Of
 # BayesianNetworkFormats only the root `BayesianNetworkFormatsError` is re-exported, never
 # its concrete types (ADR 0013 decision 2): the conformance adapters load this package with
 # `using` and serialise Formats' errors by their qualified names.
 export FiniteKernelsError, InvalidAxisError, KernelShapeError, KernelEntryError,
        KernelNormalizationError, SpaceMismatchError
-export BayesNetError, AnyBayesNetError, BayesianNetworkFormatsError, ImpossibleEvidenceError
+export BayesNetError, AnyBayesNetError, BayesianNetworkFormatsError,
+       ImpossibleEvidenceError,
+       IndeterminatePosteriorError
 
 include("errors.jl")  # first: its field types all come from Base
 include("factors.jl")

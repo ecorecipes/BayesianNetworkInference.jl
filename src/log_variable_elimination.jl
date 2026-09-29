@@ -161,7 +161,7 @@ function log_variable_elimination(fg::FactorGraph, query::AbstractVector{Symbol}
         return _factor(Symbol[], FiniteAxis[],
                        fill(exp(diagnostics.log_evidence_probability))), diagnostics
     end
-    diagnostics.mass_status == :zero && _require_evidence_mass(0.0, evidence)
+    diagnostics.mass_status == :zero && _impossible(evidence)
     return _factor(result.factor.vars, result.factor.axes,
                    exp.(result.factor.table) ./ total), diagnostics
 end
@@ -193,7 +193,7 @@ end
 
 function _all_marginals(backend::LogVariableElimination, fg::FactorGraph, evidence)
     log_evidence_probability(fg; evidence, order=backend.order) == -Inf &&
-        _require_evidence_mass(0.0, evidence)
+        _impossible(evidence)
     result = Dict{Symbol,Factor{Float64}}()
     for (variable, axis) in fg.axes
         result[variable] = haskey(evidence, variable) ?

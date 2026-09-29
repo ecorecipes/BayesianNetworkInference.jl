@@ -195,8 +195,8 @@ end
     @test first(infer(nothing_possible, Symbol[])).table[] == 0
 
     # A model that validates may hold an entry of -1e-9 (within atol), and evidence on it
-    # can then have a negative computed mass. The check is `mass <= 0`, so that is
-    # reported too; it used to test `iszero` and return a posterior.
+    # can then have a negative computed mass. That is not impossible evidence: the sign is
+    # an artefact of the tolerated rounding, so the posterior is indeterminate (ADR 0014).
     chain = bayesnet(:A => [:a1, :a2], :B => [:b1, :b2]; mechanisms=[:B => (:A,)])
     tolerated = bind_cpt(BayesModel(chain),
                          [:A => [0.5, 0.5], :B => [-1e-9 (1+1e-9); 0.0 1.0]])
@@ -205,18 +205,19 @@ end
     for backend in (VariableElimination(), JunctionTree())
         @test first(infer(tolerated, Symbol[]; evidence=negative, backend)).table[] < 0
         e = raised(() -> infer(tolerated, :A; evidence=negative, backend))
-        @test e isa ImpossibleEvidenceError && e.evidence == negative
+        @test e isa IndeterminatePosteriorError && e.evidence == negative
     end
 
-    # An overflowed raw product (1e300 * 1e300 * 0) has a NaN mass. That is not
-    # impossibility: until a later ADR classifies overflow, the posterior keeps its NaN
-    # result and no ImpossibleEvidenceError is raised (ADR 0012, decision 5).
+    # An overflowed raw product (1e300 * 1e300 * 0) has a NaN binary64 mass. The empty
+    # query still reports that mass, but a posterior is recomputed in the log domain, where
+    # 1e600 is representable, and is exact (ADR 0014; ADR 0012 left it NaN).
     overflow = FactorGraph([Factor(x, [1e300, 1e300]), Factor(x, [1e300, 1e300]),
                             Factor(x, [0.0, 1.0])])
     for backend in (VariableElimination(), JunctionTree())
         @test isnan(first(infer(overflow, Symbol[]; backend)).table[])
-        @test raised(() -> infer(overflow, :X; backend)) === nothing
-        @test all(isnan, first(infer(overflow, :X; backend)).table)
+        p, d = infer(overflow, :X; backend)
+        @test p.table == [0.0, 1.0]
+        @test d.log_fallback
     end
-    @test all(isnan, brute_force_marginal(overflow, :X).table)
+    @test brute_force_marginal(overflow, :X).table == [0.0, 1.0]
 end

@@ -164,9 +164,14 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
 - `vignettes/`: 01 factors and VE (ends with the model-level Demo 1: `.dne` -> `infer` -> `do` -> `.xdsl`),
   02 orderings, 03 sampling and Monte Carlo checks, 04 junction trees and belief propagation,
   05 validation and scoring (simulate cases, grouped holdout, calibration, prior baseline, mutual information),
-  06 inference in the log domain (a 340-site chain whose evidence mass underflows: the default backend
-  drifts at 320 sites and raises at 340, `LogVariableElimination` returns the closed-form posterior
-  throughout, and `log_evidence_probability` separates rare from impossible).
+  06 inference in the log domain (a 340-site chain whose evidence mass underflows: the default backends fall
+  back to the log domain and return the closed-form posterior, `log_evidence_probability` separates rare
+  from impossible, and tolerated negative entries give `IndeterminatePosteriorError`; ADR 0014).
+- Evidence mass (ADR 0014): `_require_evidence_mass` never decides impossibility for a binary64 mass that is
+  not a normal positive number; it throws the internal `_UnresolvedMass` signal, which every public entry
+  point resolves with `_resolving_mass` by recomputing in the log domain. Only the log domain (log mass
+  `-Inf`, via `_impossible`) raises `ImpossibleEvidenceError`. A new entry point that normalises a
+  posterior must go through `_resolving_mass`, or the signal escapes.
 - Later milestones: `ext/` adapters for external backends.
 
 ## Formal correspondence

@@ -32,6 +32,11 @@ struct InferenceDiagnostics
     max_factor_size::Int
     n_multiplications::Int
     treewidth::Int
+    log_fallback::Bool
+end
+function InferenceDiagnostics(order::AbstractVector{Symbol}, max_factor_size::Integer,
+                              n_multiplications::Integer, treewidth::Integer)
+    return InferenceDiagnostics(order, max_factor_size, n_multiplications, treewidth, false)
 end
 
 function _check_query(fg::FactorGraph, query, evidence)
@@ -50,22 +55,57 @@ function _check_query(fg::FactorGraph, query, evidence)
     return nothing
 end
 
-# The one zero-mass check of every posterior entry point (ADR 0012): the evidence mass
-# must be positive before a posterior is formed from it. The test is `mass <= 0`, so a
-# negative mass (tolerated negative entries) is caught as well as zero, while a NaN mass,
-# which a validated model cannot produce (a raw factor graph can: an overflowed product,
-# 0 * Inf), is not impossibility and keeps its current result (ADR 0012, decision 5).
-# Empty queries never reach it: they return the unnormalised mass (ADR 0011).
-function _require_evidence_mass(mass, evidence)
-    mass <= 0 && throw(ImpossibleEvidenceError(Dict{Symbol,Symbol}(evidence)))
-    return nothing
+# Evidence mass (ADR 0012, ADR 0014). A binary64 mass is trusted only when it is a normal
+# positive number. Zero, a subnormal, a negative or a non-finite mass does not say whether
+# the evidence is impossible -- a positive probability that underflowed is zero too -- so
+# the binary64 path throws the internal `_UnresolvedMass` signal (src/errors.jl) instead of deciding. Every
+# public entry point catches it (`_resolving_mass`) and recomputes in the log domain, where
+# only an exact zero gives `-Inf` and so `ImpossibleEvidenceError`. Exact element types
+# (integers, rationals) decide directly.
+
+_impossible(evidence) = throw(ImpossibleEvidenceError(Dict{Symbol,Symbol}(evidence)))
+
+function _require_evidence_mass(mass::AbstractFloat, evidence)
+    (isfinite(mass) && mass >= floatmin(typeof(mass))) && return nothing
+    return throw(_UnresolvedMass(Dict{Symbol,Symbol}(evidence)))
+end
+function _require_evidence_mass(mass::Real, evidence)
+    mass > 0 && return nothing
+    mass == 0 && _impossible(evidence)
+    return throw(IndeterminatePosteriorError(Dict{Symbol,Symbol}(evidence),
+                                             "the evidence mass is negative ($(mass))"))
 end
 
 # Normalise a posterior factor after checking its mass, so that posterior code never
-# reaches the `ArgumentError` of `normalize(::Factor)`.
+# reaches the `ArgumentError` of `normalize(::Factor)`. A negative posterior cell can come
+# only from tolerated entries in [-atol, 0); its sign is an artefact of the rounding.
 function _posterior_normalize(f::Factor, evidence)
     _require_evidence_mass(sum(f.table), evidence)
-    return normalize(f)
+    p = normalize(f)
+    v = minimum(p.table; init=zero(eltype(p.table)))
+    v < 0 &&
+        throw(IndeterminatePosteriorError(Dict{Symbol,Symbol}(evidence),
+                                          "a posterior cell is negative ($(v))"))
+    return p
+end
+
+# Run `ordinary`; if its binary64 mass was not trustworthy, run `fallback` (a log-domain
+# computation of the same answer) instead. A tolerated negative entry is outside the log
+# domain, and with a mass that small the posterior is indeterminate. Called with a `do`
+# block, which Julia passes first: `_resolving_mass(() -> ordinary, evidence) do ... end`.
+function _resolving_mass(fallback, ordinary, evidence)
+    try
+        return ordinary()
+    catch e
+        e isa _UnresolvedMass || rethrow()
+    end
+    try
+        return fallback()
+    catch e
+        (e isa LogFactorDomainError && isfinite(e.value) && e.value < 0) || rethrow()
+        throw(IndeterminatePosteriorError(Dict{Symbol,Symbol}(evidence),
+                                          "the binary64 evidence mass is below the normal range and a tolerated negative entry ($(e.value)) has no logarithm"))
+    end
 end
 
 # Strategy restricted to the variables that survive conditioning.
@@ -93,13 +133,24 @@ optimisation of [ZhangPoole1994](@cite).
 Throws [`ScopeError`](@ref) for unknown or repeated query variables, unknown
 evidence variables, or a query variable that also carries evidence, and
 `BayesianNetworks.ImpossibleEvidenceError` for a non-empty `query` when the
-evidence has zero computed probability (zero or negative mass, including a
-positive mass that underflowed; see its docstring).
+evidence has probability exactly zero. A binary64 mass that is zero, subnormal or
+non-finite does not decide that -- a positive probability can underflow -- so the
+posterior is then recomputed by [`log_variable_elimination`](@ref) and returned, with
+`diagnostics.log_fallback == true` (ADR 0014). A model with tolerated entries in
+`[-atol, 0)` raises `BayesianNetworks.IndeterminatePosteriorError` when a posterior cell
+comes out negative or the log domain meets such an entry.
 """
 function variable_elimination(fg::FactorGraph{T}, query::AbstractVector{Symbol};
                               evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
                               order::EliminationStrategy=MinFill()) where {T}
-    return _variable_elimination(fg, query, evidence, order, nothing)
+    isempty(query) && return _variable_elimination(fg, query, evidence, order, nothing)
+    return _resolving_mass(() -> _variable_elimination(fg, query, evidence, order, nothing),
+                           evidence) do
+        f, d = log_variable_elimination(fg, query; evidence, order)
+        return f,
+               InferenceDiagnostics(d.order, d.max_factor_size, d.n_multiplications,
+                                    d.treewidth, true)
+    end
 end
 
 # The elimination-order cache. `graph`, `vars` and `index` exist only to produce `elim`,
@@ -244,7 +295,10 @@ function brute_force_marginal(fg::FactorGraph, query::AbstractVector{Symbol};
     _check_query(fg, query, evidence)
     j = condition(joint_factor(fg), evidence)
     m = reorder(marginalize(j, setdiff(j.vars, query)), query)
-    return isempty(query) ? m : _posterior_normalize(m, evidence)
+    isempty(query) && return m
+    return _resolving_mass(() -> _posterior_normalize(m, evidence), evidence) do
+        return first(log_variable_elimination(fg, query; evidence))
+    end
 end
 function brute_force_marginal(fg::FactorGraph, query::Symbol; kwargs...)
     return brute_force_marginal(fg, [query]; kwargs...)

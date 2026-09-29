@@ -154,7 +154,8 @@ root covers them. Typed errors of the lower packages pass through unchanged, and
 roots are re-exported. From BayesianNetworks.jl: the root `BayesNetError`, the union
 `AnyBayesNetError`, which catches every typed exception of the ecosystem, and
 `ImpossibleEvidenceError`, the one error every posterior entry point raises for evidence
-of zero computed probability (ADR 0012); they are documented in the BayesianNetworks.jl
+of probability exactly zero (ADR 0012), and `IndeterminatePosteriorError` for a posterior
+left to tolerated rounding (ADR 0014); they are documented in the BayesianNetworks.jl
 API reference. From FiniteKernels.jl, whose errors the factor API raises for an unknown
 label and the kernel conversion raises for a factor that is not a kernel: the root
 `FiniteKernelsError` and its five types `InvalidAxisError`, `KernelShapeError`,

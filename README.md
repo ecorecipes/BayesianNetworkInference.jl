@@ -55,12 +55,14 @@ with `BayesianNetworkFormats.jl` (file formats) and `EcologicalBayesianNetworks.
   `BeliefPropagation(check_evidence=true)` for an exact VE feasibility pass;
   `diagnostics.evidence_checked` distinguishes that from unknown feasibility.
 - Exact VE/JT posterior entry points check global mass, including disconnected components and
-  all-observed shortcuts. When it is zero or negative they raise `ImpossibleEvidenceError`, the
-  error `BayesianNetworks.marginal` raises (re-exported here); every backend, and everything built
-  on them, raises the same one (ADR 0012). Until a later ADR this includes a positive mass that
-  underflowed, which the log-domain backends answer instead. An empty `infer` query still returns
-  unnormalized evidence mass, which may legitimately be zero. Integer factors promote to
-  division-compatible posterior types.
+  all-observed shortcuts. Evidence of probability exactly zero raises `ImpossibleEvidenceError`, the
+  error `BayesianNetworks.marginal` raises (re-exported here), from every backend and everything
+  built on them (ADR 0012). A binary64 mass that is zero, subnormal or non-finite does not decide
+  that, since a positive probability can underflow: the query is then recomputed in the log domain
+  and answered, and the diagnostics' `log_fallback` says so (ADR 0014). Tolerated negative entries
+  that leave a posterior's sign to rounding raise `IndeterminatePosteriorError`. An empty `infer`
+  query still returns unnormalized evidence mass, which may legitimately be zero. Integer factors
+  promote to division-compatible posterior types.
 - `ancestral_sample` over named kernels in topological order and `empirical_marginal` for Monte Carlo cross-checks.
 - Out-of-sample validation: `Cases` datasets (a vector of `Dict{Symbol,Symbol}` observations, complete or
   partial), `predict` for a withheld target, the proper scoring rules `brier_score`, `log_score` and
@@ -71,7 +73,7 @@ with `BayesianNetworkFormats.jl` (file formats) and `EcologicalBayesianNetworks.
   ranking of every variable against a target) and `tornado` (the range one finding could move an answer).
 - Typed exceptions (`ScopeError`, `ShapeError`, `CompileError` and `LogFactorDomainError` under the root
   `InferenceError <: BayesNetError`, `ImpossibleEvidenceError` from `BayesianNetworks.jl` for evidence of
-  zero computed probability, plus `KernelNormalizationError` / `InvalidAxisError` from `FiniteKernels.jl`)
+  probability exactly zero, `IndeterminatePosteriorError` for a posterior left to tolerated rounding, plus `KernelNormalizationError` / `InvalidAxisError` from `FiniteKernels.jl`)
   carrying the offending variable names or evidence; the re-exported `AnyBayesNetError` catches them all.
 
 ## Exact finite-model proof scope

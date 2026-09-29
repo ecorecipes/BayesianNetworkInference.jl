@@ -11,6 +11,21 @@ function _model_evidence(m::BayesModel, ev)
     return merge(Dict{Symbol,Symbol}(BayesianNetworks.evidence(m)), _evidence_dict(ev))
 end
 
+# The tolerance budget (ADR 0014, and BayesianNetworks' `marginal`): a validated model may
+# hold entries in [-atol, 0), and when it does, evidence whose mass is within the budget
+# (1 + atol)^n - 1 of zero leaves the posterior's sign to the rounding. Only the model-level
+# entry points know `atol`, so they check it; the check costs one elimination and runs only
+# for a model with a negative entry.
+function _check_tolerance_budget(fg::FactorGraph, ev::AbstractDict, atol::Real)
+    isempty(ev) && return nothing
+    any(f -> any(<(0), f.table), fg.factors) || return nothing
+    mass = variable_elimination(fg, Symbol[]; evidence=ev)[1].table[]
+    budget = BayesianNetworks._joint_atol(atol, length(fg.factors))
+    (isfinite(mass) && mass > budget) && return nothing
+    return throw(IndeterminatePosteriorError(Dict{Symbol,Symbol}(ev),
+                                             "the evidence mass $(mass) is within the tolerance budget $(budget) of zero"))
+end
+
 """
     infer(m::BayesModel, query; evidence=Dict{Symbol,Symbol}(), backend=VariableElimination(), atol=DEFAULT_ATOL)
         -> (posterior::Factor, diagnostics::InferenceDiagnostics)
@@ -36,9 +51,11 @@ Throws [`CompileError`](@ref) (or a `BayesianNetworks` exception) when the
 model cannot be compiled, [`ScopeError`](@ref) for unknown or repeated
 query variables, unknown evidence variables, or a query variable that also
 carries evidence, and `BayesianNetworks.ImpossibleEvidenceError` for a
-non-empty query when the evidence has zero computed probability, as
-`BayesianNetworks.marginal` does. Plain [`BeliefPropagation`](@ref) detects
-only local zero support; see [`belief_propagation`](@ref).
+non-empty query when the evidence has probability exactly zero, as
+`BayesianNetworks.marginal` does. Evidence whose binary64 mass underflows is
+answered by the log-domain fallback (ADR 0014). When the model holds tolerated
+entries in `[-atol, 0)` and the evidence mass is within the tolerance budget
+`(1 + atol)^n - 1` of zero, `BayesianNetworks.IndeterminatePosteriorError` is raised.
 
 ```jldoctest
 julia> using BayesianNetworks
@@ -64,8 +81,11 @@ function infer(m::BayesModel, query::AbstractVector{Symbol};
                evidence=Dict{Symbol,Symbol}(),
                backend::InferenceBackend=VariableElimination(),
                atol::Real=BayesianNetworks.DEFAULT_ATOL)
-    return infer(compile(m; atol=atol), query; evidence=_model_evidence(m, evidence),
-                 backend)
+    fg = compile(m; atol=atol)
+    ev = _model_evidence(m, evidence)
+    # An empty query returns the unnormalised mass (ADR 0011), which may be tiny or negative.
+    isempty(query) || _check_tolerance_budget(fg, ev, atol)
+    return infer(fg, query; evidence=ev, backend)
 end
 infer(m::BayesModel, query::Symbol; kwargs...) = infer(m, [query]; kwargs...)
 
@@ -106,8 +126,10 @@ julia> ms[:Vegetation].table
 function all_marginals(m::BayesModel; evidence=Dict{Symbol,Symbol}(),
                        backend::InferenceBackend=JunctionTree(),
                        atol::Real=BayesianNetworks.DEFAULT_ATOL)
-    return all_marginals(compile(m; atol=atol); evidence=_model_evidence(m, evidence),
-                         backend)
+    fg = compile(m; atol=atol)
+    ev = _model_evidence(m, evidence)
+    _check_tolerance_budget(fg, ev, atol)
+    return all_marginals(fg; evidence=ev, backend)
 end
 
 """

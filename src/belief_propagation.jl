@@ -59,6 +59,12 @@ point of the message equations gives exact marginals for feasible evidence.
 `max_residual` is not a general bound on marginal error. In particular,
 `converged` does not certify global evidence feasibility: unless
 `evidence_checked` is true, that status is unknown.
+
+`exact_fallback` is true when a message or belief summed to zero although the exact
+log-domain evidence mass was positive -- local support is not a complete feasibility test
+on a graph with loops, and a message can underflow -- and the marginals were therefore
+computed by the exact log-domain junction tree instead (ADR 0014). `iterations`,
+`converged` and `max_residual` then describe no BP run (0, `true`, 0.0).
 """
 struct BPDiagnostics
     iterations::Int
@@ -66,9 +72,11 @@ struct BPDiagnostics
     max_residual::Float64
     tree::Bool
     evidence_checked::Bool
+    exact_fallback::Bool
 end
-function BPDiagnostics(iterations::Integer, converged::Bool, max_residual::Real, tree::Bool)
-    return BPDiagnostics(iterations, converged, max_residual, tree, false)
+function BPDiagnostics(iterations::Integer, converged::Bool, max_residual::Real, tree::Bool,
+                       evidence_checked::Bool=false)
+    return BPDiagnostics(iterations, converged, max_residual, tree, evidence_checked, false)
 end
 
 """
@@ -121,11 +129,12 @@ function _BPState(factors::Vector{Factor{T}}, axes::Dict{Symbol,FiniteAxis},
                        to_factor, evidence)
 end
 
-# Normalise a message in place. An all-zero message means that the supports of
-# the incoming messages and of the factor do not intersect, i.e. the
-# configuration has probability zero under the evidence; that is a hard
-# failure, reported exactly as variable elimination and the junction tree
-# report impossible evidence: `ImpossibleEvidenceError` (ADR 0012).
+# Normalise a message in place. A message whose sum is zero or below the normal range does
+# not prove the evidence impossible: on a graph with loops local support is not a complete
+# feasibility test, and a message can underflow. `_require_evidence_mass` therefore signals
+# it, and `belief_propagation` resolves the signal with the exact log-domain evidence mass
+# (ADR 0014): `ImpossibleEvidenceError` for an exact zero, otherwise the exact log-domain
+# junction tree answers.
 function _normalize!(m::Vector, evidence)
     s = sum(m)
     _require_evidence_mass(s, evidence)
@@ -257,17 +266,39 @@ function belief_propagation(fg::FactorGraph{T},
     ev = Dict{Symbol,Symbol}(evidence)
     if backend.check_evidence
         mass = variable_elimination(fg, Symbol[]; evidence=ev)[1].table[]
-        _require_evidence_mass(mass, ev)
+        _resolving_mass(() -> _require_evidence_mass(mass, ev), ev) do
+            log_evidence_probability(fg; evidence=ev) == -Inf && _impossible(ev)
+            return nothing
+        end
     end
     R = typeof(float(one(T)))
     factors = Factor{R}[]
-    scale = one(R)
     for f in fg.factors
         g = _convert_factor(R, condition(f, ev))
-        isempty(g.vars) ? (scale *= g.table[]) : push!(factors, g)
+        if isempty(g.vars)
+            # A factor conditioned to the empty scope is one entry of the data. Check it,
+            # not the product of all of them, which can underflow: an exact zero entry
+            # makes the evidence impossible, and a negative one leaves it indeterminate.
+            v = g.table[]
+            iszero(v) && _impossible(ev)
+            v < 0 &&
+                throw(IndeterminatePosteriorError(ev,
+                                                  "a factor conditioned on the evidence is negative ($(v))"))
+        else
+            push!(factors, g)
+        end
     end
-    # a factor conditioned to the empty scope is zero: the evidence has probability zero
-    _require_evidence_mass(scale, ev)
+    return _resolving_mass(() -> _run_bp(fg, backend, factors, ev), ev) do
+        log_evidence_probability(fg; evidence=ev) == -Inf && _impossible(ev)
+        marginals = _all_marginals(LogJunctionTree(), fg, ev)
+        return Dict{Symbol,Factor{R}}(v => _convert_factor(R, f) for (v, f) in marginals),
+               BPDiagnostics(0, true, 0.0, _is_forest(factors), backend.check_evidence,
+                             true)
+    end
+end
+
+function _run_bp(fg::FactorGraph, backend::BeliefPropagation, factors::Vector{Factor{R}},
+                 ev) where {R}
     st = _BPState(factors, fg.axes, ev)
     iterations = 0
     residual = Inf

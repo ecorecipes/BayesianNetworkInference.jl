@@ -145,13 +145,13 @@ function _infer(backend::LogJunctionTree, fg::FactorGraph, query, evidence)
         return _factor(Symbol[], FiniteAxis[], fill(exp(cal.log_evidence_probability))),
                _diagnostics(cal, 0)
     end
-    cal.log_evidence_probability == -Inf && _require_evidence_mass(0.0, evidence)
+    cal.log_evidence_probability == -Inf && _impossible(evidence)
     return _log_belief_marginal(cal.beliefs[clique], query), _diagnostics(cal, clique)
 end
 
 function _all_marginals(backend::LogJunctionTree, fg::FactorGraph, evidence)
     cal = log_calibrate(fg; evidence, order=backend.order)
-    cal.log_evidence_probability == -Inf && _require_evidence_mass(0.0, evidence)
+    cal.log_evidence_probability == -Inf && _impossible(evidence)
     return Dict{Symbol,Factor{Float64}}(variable => haskey(evidence, variable) ?
                                                     _point_mass(Float64, axis,
                                                                 evidence[variable]) :
@@ -162,6 +162,6 @@ end
 
 function _clique_beliefs(backend::LogJunctionTree, fg::FactorGraph, evidence)
     cal = log_calibrate(fg; evidence, order=backend.order)
-    cal.log_evidence_probability == -Inf && _require_evidence_mass(0.0, evidence)
+    cal.log_evidence_probability == -Inf && _impossible(evidence)
     return [_log_belief_marginal(belief, belief.factor.vars) for belief in cal.beliefs]
 end

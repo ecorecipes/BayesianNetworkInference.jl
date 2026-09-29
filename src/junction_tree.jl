@@ -345,11 +345,13 @@ struct JunctionTreeDiagnostics
     max_clique_size::Int
     n_messages::Int
     fallback::Bool
+    log_fallback::Bool
 end
 function JunctionTreeDiagnostics(clique::Integer, n_cliques::Integer, treewidth::Integer,
-                                 max_clique_size::Integer, n_messages::Integer)
+                                 max_clique_size::Integer, n_messages::Integer,
+                                 fallback::Bool=false)
     return JunctionTreeDiagnostics(clique, n_cliques, treewidth, max_clique_size,
-                                   n_messages, false)
+                                   n_messages, fallback, false)
 end
 
 function _diagnostics(cal::CalibratedJunctionTree, clique::Int)
@@ -381,8 +383,20 @@ function _belief_marginal(belief::Factor, query, evidence)
                                 evidence)
 end
 
-function _infer(backend::JunctionTree, fg::FactorGraph{T}, query, evidence) where {T}
+function _infer(backend::JunctionTree, fg::FactorGraph, query, evidence)
     _check_query(fg, query, evidence)
+    isempty(query) && return _infer_binary64(backend, fg, query, evidence)
+    return _resolving_mass(() -> _infer_binary64(backend, fg, query, evidence),
+                           evidence) do
+        f, d = _infer(LogJunctionTree(; order=backend.order), fg, query, evidence)
+        return f,
+               JunctionTreeDiagnostics(d.clique, d.n_cliques, d.treewidth,
+                                       d.max_clique_size, d.n_messages, d.fallback, true)
+    end
+end
+
+function _infer_binary64(backend::JunctionTree, fg::FactorGraph{T}, query,
+                         evidence) where {T}
     jt = build_junction_tree(fg; order=backend.order)
     if isempty(query)
         cal = calibrate(fg, jt; evidence)
@@ -410,7 +424,8 @@ The posterior `P(clique | evidence)` of every clique of the junction tree of
 `fg` (in the order of `build_junction_tree(fg; order=backend.order).cliques`),
 as normalised factors whose scopes are the cliques minus the evidence
 variables. Throws `BayesianNetworks.ImpossibleEvidenceError` if the evidence
-has zero computed probability.
+has probability exactly zero; a binary64 mass that underflowed is recomputed by the
+log-domain junction tree (ADR 0014).
 """
 function clique_beliefs(fg::FactorGraph;
                         evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
@@ -419,9 +434,14 @@ function clique_beliefs(fg::FactorGraph;
 end
 
 function _clique_beliefs(backend::JunctionTree, fg::FactorGraph, evidence)
-    cal = calibrate(fg, build_junction_tree(fg; order=backend.order); evidence)
-    _require_evidence_mass(cal.evidence_probability, evidence)
-    return [_posterior_normalize(belief, evidence) for belief in cal.beliefs]
+    ordinary = function ()
+        cal = calibrate(fg, build_junction_tree(fg; order=backend.order); evidence)
+        _require_evidence_mass(cal.evidence_probability, evidence)
+        return [_posterior_normalize(belief, evidence) for belief in cal.beliefs]
+    end
+    return _resolving_mass(ordinary, evidence) do
+        return _clique_beliefs(LogJunctionTree(; order=backend.order), fg, evidence)
+    end
 end
 
 """
@@ -445,7 +465,15 @@ function all_marginals(fg::FactorGraph;
     return _all_marginals(backend, fg, Dict{Symbol,Symbol}(evidence))
 end
 
-function _all_marginals(backend::JunctionTree, fg::FactorGraph{T}, evidence) where {T}
+function _all_marginals(backend::JunctionTree, fg::FactorGraph, evidence)
+    return _resolving_mass(() -> _all_marginals_binary64(backend, fg, evidence),
+                           evidence) do
+        return _all_marginals(LogJunctionTree(; order=backend.order), fg, evidence)
+    end
+end
+
+function _all_marginals_binary64(backend::JunctionTree, fg::FactorGraph{T},
+                                 evidence) where {T}
     jt = build_junction_tree(fg; order=backend.order)
     cal = calibrate(fg, jt; evidence)
     _require_evidence_mass(cal.evidence_probability, evidence)
@@ -465,7 +493,11 @@ function _all_marginals(backend::VariableElimination, fg::FactorGraph{T},
                         evidence) where {T}
     if all(v -> haskey(evidence, v), keys(fg.axes))
         mass = variable_elimination(fg, Symbol[]; evidence, order=backend.order)[1].table[]
-        _require_evidence_mass(mass, evidence)
+        _resolving_mass(() -> _require_evidence_mass(mass, evidence), evidence) do
+            log_evidence_probability(fg; evidence, order=backend.order) == -Inf &&
+                _impossible(evidence)
+            return nothing
+        end
     end
     R = _division_type(T)
     out = Dict{Symbol,Factor{R}}()

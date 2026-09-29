@@ -146,7 +146,7 @@ exceptions of `BayesianNetworks.validate`, pass through unchanged; the
 re-exported `AnyBayesNetError` catches every one of them. Invalid arguments
 and keywords raise `ArgumentError`, which is outside every root.
 
-Evidence of zero computed probability raises `BayesianNetworks`'
+Evidence of probability exactly zero raises `BayesianNetworks`'
 `ImpossibleEvidenceError`, which this package re-exports, carrying the
 evidence. It is the one zero-mass error of every posterior entry point
 (ADR 0012): variable elimination, brute force, the junction tree, belief
@@ -164,13 +164,17 @@ catch e
 end
 ```
 
-Until a later ADR, the paths that form the evidence mass in ordinary
-arithmetic (variable elimination, the junction tree, brute force, and belief
-propagation with `check_evidence`) also raise it for a positive mass that
-underflowed. [`LogVariableElimination`](@ref) and [`LogJunctionTree`](@ref)
-answer such queries instead, and [`log_evidence_probability`](@ref) returns
-`-Inf` only for evidence that is exactly impossible. An empty query never
-raises: it returns the unnormalised mass, which may be zero.
+Evidence that is merely rare is answered, not rejected (ADR 0014). A mass that is
+zero, subnormal or non-finite in binary64 does not decide impossibility, so
+variable elimination, the junction tree, brute force and belief propagation
+recompute such a query with [`LogVariableElimination`](@ref) or
+[`LogJunctionTree`](@ref) and return that answer; the diagnostics' `log_fallback`
+(or `exact_fallback` for belief propagation) records it. Only the log domain, where
+[`log_evidence_probability`](@ref) is `-Inf` exactly for impossible evidence, may
+raise `ImpossibleEvidenceError`. A model with tolerated entries in `[-atol, 0)` can
+leave a posterior's sign to the rounding; that raises `BayesianNetworks`'
+`IndeterminatePosteriorError` instead of returning a negative probability. An empty
+query never raises: it returns the unnormalised mass, which may be zero.
 
 ## References
 

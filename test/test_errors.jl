@@ -45,7 +45,10 @@ end
         for T in owned
             @test T <: InferenceError
             @test parentmodule(T) === BayesianNetworkInference
-            @test string(T) == string(nameof(T))
+            # Exported names print bare (the frozen-name rule); an internal type, such as the
+            # `_UnresolvedMass` signal, is never shown to a caller.
+            Base.isexported(BayesianNetworkInference, nameof(T)) &&
+                @test string(T) == string(nameof(T))
         end
         @test isabstracttype(InferenceError)
         @test supertype(InferenceError) === BayesNetError

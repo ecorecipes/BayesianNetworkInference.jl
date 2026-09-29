@@ -156,3 +156,11 @@ function Base.showerror(io::IO, e::FactorEntryError)
                  "; entries of a factor graph must be finite and at least -",
                  e.atol, " (pass check = false to skip this)")
 end
+
+# Internal control-flow signal, never raised to a caller (ADR 0014): the binary64 path found
+# an evidence mass that is not a normal positive number, which does not decide whether the
+# evidence is impossible. Every public entry point catches it and recomputes in the log
+# domain (`_resolving_mass` in variable_elimination.jl).
+struct _UnresolvedMass <: InferenceError
+    evidence::Dict{Symbol,Symbol}
+end

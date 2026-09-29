@@ -77,14 +77,25 @@ function trace_variable_elimination(fg::FactorGraph{Float64}, query::AbstractVec
                                                "package_version" => string(Base.pkgversion(@__MODULE__))))
     recorder = _VETraceRecorder(data, Int(max_entries))
     data["inputs"] = [_trace_factor!(recorder, factor) for factor in fg.factors]
-    result, diagnostics = _variable_elimination(fg, query, evidence, order, recorder)
+    # The v1 profile records binary64 execution, so it cannot fall back to the log domain.
+    # An exact zero mass is impossible evidence; a mass that underflowed cannot form this
+    # posterior in binary64 at all, and is reported as a trace limit.
+    result, diagnostics = try
+        _variable_elimination(fg, query, evidence, order, recorder)
+    catch e
+        e isa _UnresolvedMass || rethrow()
+        log_evidence_probability(fg; evidence, order) == -Inf && _impossible(evidence)
+        throw(ScopeError(:trace_variable_elimination,
+                         "the binary64 evidence mass underflowed, and the v1 trace profile records binary64 execution; use LogVariableElimination for this posterior",
+                         collect(Symbol, query)))
+    end
     return result, diagnostics, data
 end
 
 function trace_variable_elimination(fg::FactorGraph, query::AbstractVector{Symbol};
                                     kwargs...)
-    throw(ScopeError(:trace_variable_elimination,
-                     "the v1 trace profile requires Float64 factors", variables(fg)))
+    return throw(ScopeError(:trace_variable_elimination,
+                            "the v1 trace profile requires Float64 factors", variables(fg)))
 end
 
 function trace_variable_elimination(fg::FactorGraph, query::Symbol; kwargs...)
