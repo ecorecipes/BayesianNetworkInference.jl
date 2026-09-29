@@ -2408,14 +2408,14 @@ window.Quarto = {
 <section id="overview" class="level2">
 <h2 class="anchored" data-anchor-id="overview">Overview</h2>
 <p>Every backend of the previous vignettes multiplies probabilities together. On a small network that is harmless, but the joint probability of a long run of observations is a product of many numbers below one, and Float64 runs out of exponent at about <span class="math inline">\(10^{-308}\)</span> — and out of <em>precision</em> well before that. When the evidence mass underflows to zero, an exact backend cannot form a posterior at all: dividing by zero mass is not a rounding error, it is a missing answer.</p>
-<p>The awkward part is that a genuinely impossible observation also has zero mass. In ordinary arithmetic the two are indistinguishable, and the error is the same.</p>
-<p>This vignette covers the opt-in log-domain layer, which addresses both:</p>
+<p>The awkward part is that a genuinely impossible observation also has zero mass. In ordinary arithmetic the two are indistinguishable.</p>
+<p>This vignette covers the log-domain layer, which addresses both:</p>
 <ul>
 <li><code>LogVariableElimination</code> and <code>LogJunctionTree</code> carry centered log-domain factors and combine them with log-sum-exp, so the intermediate quantities stay representable.</li>
 <li><code>log_evidence_probability</code> returns the log evidence mass, which is an ordinary finite number for evidence that is merely rare, and <code>-Inf</code> for evidence that is impossible.</li>
 <li><code>LogInferenceDiagnostics.mass_status</code> reports <code>:finite</code>, <code>:underflow</code> or <code>:zero</code>, so a run says which situation it was in.</li>
 </ul>
-<p>The default backends are unchanged. This layer is opt-in, and the last section is explicit about what it does <em>not</em> promise.</p>
+<p>The default backends use this layer as a fallback: when the Float64 evidence mass is not a normal positive number, they recompute the answer in the log domain rather than trust it (ADR 0014). The last section is explicit about what the layer does <em>not</em> promise.</p>
 </section>
 <section id="setup" class="level2">
 <h2 class="anchored" data-anchor-id="setup">Setup</h2>
@@ -2423,15 +2423,6 @@ window.Quarto = {
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">using</span> <span class="bu">BayesianNetworkInference</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">using</span> <span class="bu">FiniteKernels</span></span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="im">using</span> <span class="bu">BayesianNetworks</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-stdout">
-<div class="ansi-escaped-output">
-<pre><span class="ansi-green-fg ansi-bold">Precompiling</span> packages...
-   3979.1 ms<span class="ansi-green-fg">  ✓ </span>BayesianNetworkInference
-  1 dependency successfully precompiled in 6 seconds. 126 already precompiled.
-  <span class="ansi-yellow-fg">28</span> dependencies precompiled but <span class="ansi-yellow-fg">different versions are currently loaded</span> (ArgTools, Base64, Dates, Downloads, InteractiveUtils, JuliaSyntaxHighlighting, LibCURL, LibCURL_jll, LibGit2, LibGit2_jll, LibSSH2_jll, Logging, Markdown, MozillaCACerts_jll, NetworkOptions, OpenSSL_jll, Pkg, Pkg → REPLExt, Printf, REPL, StyledStrings, TOML, Tar, UUIDs, Unicode, Zlib_jll, nghttp2_jll and p7zip_jll). Restart julia to access the new versions. Otherwise, 60 dependents of these packages may trigger further precompilation to work with the unexpected versions.
-</pre>
-</div>
-</div>
 </div>
 </section>
 <section id="a-model-whose-evidence-underflows" class="level2">
@@ -2469,41 +2460,38 @@ window.Quarto = {
 </section>
 <section id="where-ordinary-arithmetic-gives-out" class="level2">
 <h2 class="anchored" data-anchor-id="where-ordinary-arithmetic-gives-out">Where ordinary arithmetic gives out</h2>
-<p>Running the default backend as the chain grows shows three regimes rather than two.</p>
+<p>The Float64 evidence mass goes through three regimes as the chain grows: a normal number, a subnormal one, and zero. The log-domain backend reports the log mass and its status alongside the default backend’s answer and whether it fell back:</p>
 <div id="8" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="kw">function</span> <span class="fu">compare</span>(n)</span>
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>    mm, vv <span class="op">=</span> <span class="fu">detection_chain</span>(n)</span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>    ev <span class="op">=</span> <span class="fu">Dict</span>(v <span class="op">=&gt;</span> <span class="op">:</span>yes <span class="cf">for</span> v <span class="kw">in</span> vv[<span class="fl">1</span><span class="op">:</span>(n <span class="op">-</span> <span class="fl">1</span>)])</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    default <span class="op">=</span> <span class="cf">try</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>        p, _ <span class="op">=</span> <span class="fu">infer</span>(mm, vv[n]; evidence <span class="op">=</span> ev)</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>        <span class="fu">round</span>.(p.table; digits <span class="op">=</span> <span class="fl">4</span>)</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">catch</span> <span class="cn">e</span></span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>        <span class="fu">typeof</span>(<span class="cn">e</span>)</span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>    <span class="cf">end</span></span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>    p, d <span class="op">=</span> <span class="fu">infer</span>(mm, vv[n]; evidence <span class="op">=</span> ev, backend <span class="op">=</span> <span class="fu">LogVariableElimination</span>())</span>
-<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (n <span class="op">=</span> n, default <span class="op">=</span> default, log_domain <span class="op">=</span> <span class="fu">round</span>.(p.table; digits <span class="op">=</span> <span class="fl">4</span>),</span>
-<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>            log_mass <span class="op">=</span> <span class="fu">round</span>(d.log_evidence_probability; digits <span class="op">=</span> <span class="fl">1</span>),</span>
-<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>            status <span class="op">=</span> d.mass_status)</span>
-<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span>
-<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>[<span class="fu">compare</span>(n) for n <span class="kw">in</span> (<span class="fl">300</span>, <span class="fl">320</span>, <span class="fl">340</span>, <span class="fl">400</span>)]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>    q, info <span class="op">=</span> <span class="fu">infer</span>(mm, vv[n]; evidence <span class="op">=</span> ev)</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>    p, d <span class="op">=</span> <span class="fu">infer</span>(mm, vv[n]; evidence <span class="op">=</span> ev, backend <span class="op">=</span> <span class="fu">LogVariableElimination</span>())</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> (n <span class="op">=</span> n, default <span class="op">=</span> <span class="fu">round</span>.(q.table; digits <span class="op">=</span> <span class="fl">4</span>),</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>            route <span class="op">=</span> info.log_fallback ? <span class="op">:</span>log_fallback <span class="op">:</span> <span class="op">:</span>float64,</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>            log_domain <span class="op">=</span> <span class="fu">round</span>.(p.table; digits <span class="op">=</span> <span class="fl">4</span>),</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>            log_mass <span class="op">=</span> <span class="fu">round</span>(d.log_evidence_probability; digits <span class="op">=</span> <span class="fl">1</span>),</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>            status <span class="op">=</span> d.mass_status)</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>[<span class="fu">compare</span>(n) for n <span class="kw">in</span> (<span class="fl">300</span>, <span class="fl">320</span>, <span class="fl">340</span>, <span class="fl">400</span>)]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>4-element Vector{NamedTuple{(:n, :default, :log_domain, :log_mass, :status)}}:
- (n = 300, default = [0.9, 0.1], log_domain = [0.9, 0.1], log_mass = -693.1, status = :finite)
- (n = 320, default = [0.901, 0.099], log_domain = [0.9, 0.1], log_mass = -739.1, status = :finite)
- (n = 340, default = ImpossibleEvidenceError, log_domain = [0.9, 0.1], log_mass = -785.2, status = :underflow)
- (n = 400, default = ImpossibleEvidenceError, log_domain = [0.9, 0.1], log_mass = -923.3, status = :underflow)</code></pre>
+<pre><code>4-element Vector{@NamedTuple{n::Int64, default::Vector{Float64}, route::Symbol, log_domain::Vector{Float64}, log_mass::Float64, status::Symbol}}:
+ (n = 300, default = [0.9, 0.1], route = :float64, log_domain = [0.9, 0.1], log_mass = -693.1, status = :finite)
+ (n = 320, default = [0.9, 0.1], route = :log_fallback, log_domain = [0.9, 0.1], log_mass = -739.1, status = :finite)
+ (n = 340, default = [0.9, 0.1], route = :log_fallback, log_domain = [0.9, 0.1], log_mass = -785.2, status = :underflow)
+ (n = 400, default = [0.9, 0.1], route = :log_fallback, log_domain = [0.9, 0.1], log_mass = -923.3, status = :underflow)</code></pre>
 </div>
 </div>
-<p>At 300 sites the two agree. At 320 the default backend still returns an answer, but it is no longer the right one — the fourth decimal has moved, because the mass is near the bottom of the representable range and the significand has been eaten away. At 340 the mass underflows to zero and the default backend raises, correctly, because it cannot form a posterior from zero.</p>
-<p>The log-domain backend returns the exact answer throughout:</p>
+<p>At 300 sites the mass is an ordinary Float64 and the default backend answers directly. At 320 the mass is subnormal: it is not zero (so <code>mass_status</code> is still <code>:finite</code>), but most of its significand has gone, and a posterior normalised by it would be wrong in the fourth decimal, <code>[0.901, 0.099]</code>. At 340 it underflows to zero, which Float64 cannot tell apart from a contradiction. The default backend trusts a mass only when it is a normal positive number; in the other two regimes it reruns the query in the log domain and says so in the diagnostics’ <code>log_fallback</code>. Both paths return the exact answer throughout:</p>
 <div id="10" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">all</span>(<span class="fu">compare</span>(n).log_domain <span class="op">==</span> exact <span class="cf">for</span> n <span class="kw">in</span> (<span class="fl">300</span>, <span class="fl">320</span>, <span class="fl">340</span>, <span class="fl">400</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">all</span>(<span class="fu">compare</span>(n).default <span class="op">==</span> exact <span class="op">&amp;&amp;</span> <span class="fu">compare</span>(n).log_domain <span class="op">==</span> exact</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> n <span class="kw">in</span> (<span class="fl">300</span>, <span class="fl">320</span>, <span class="fl">340</span>, <span class="fl">400</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>true</code></pre>
 </div>
 </div>
-<p>The middle regime is the one worth dwelling on: silent precision loss arrives <em>before</em> outright failure, and only the closed form reveals it.</p>
+<p>The middle regime is why the test is “normal”, not “nonzero”: silent precision loss arrives <em>before</em> outright underflow, and only the closed form would reveal it.</p>
 </section>
 <section id="evidence-mass-and-telling-rare-from-impossible" class="level2">
 <h2 class="anchored" data-anchor-id="evidence-mass-and-telling-rare-from-impossible">Evidence mass, and telling rare from impossible</h2>
@@ -2528,30 +2516,26 @@ window.Quarto = {
 <pre><code>-Inf</code></pre>
 </div>
 </div>
-<p><code>-Inf</code>, not a small number. The two cases are now distinguishable, which they are not in ordinary arithmetic: there, both the rare chain and the contradictory observation produce zero mass and the same error.</p>
+<p><code>-Inf</code>, not a small number. The two cases are distinguishable here, which they are not in ordinary arithmetic, where both produce a mass of zero. That is what lets the default backend answer one and reject the other:</p>
 <div id="16" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>(rare_chain <span class="op">=</span> <span class="cf">try</span></span>
-<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>     <span class="fu">infer</span>(m340, <span class="op">:</span>D340; evidence <span class="op">=</span> rare)</span>
-<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a> <span class="cf">catch</span> <span class="cn">e</span></span>
-<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>     <span class="fu">typeof</span>(<span class="cn">e</span>)</span>
-<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a> <span class="cf">end</span>,</span>
-<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a> contradiction <span class="op">=</span> <span class="cf">try</span></span>
-<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>     <span class="fu">infer</span>(dm, <span class="op">:</span>C; evidence <span class="op">=</span> impossible)</span>
-<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a> <span class="cf">catch</span> <span class="cn">e</span></span>
-<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>     <span class="fu">typeof</span>(<span class="cn">e</span>)</span>
-<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a> <span class="cf">end</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>(rare_chain <span class="op">=</span> <span class="fu">round</span>.(<span class="fu">first</span>(<span class="fu">infer</span>(m340, <span class="op">:</span>D340; evidence <span class="op">=</span> rare)).table; digits <span class="op">=</span> <span class="fl">4</span>),</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a> contradiction <span class="op">=</span> <span class="cf">try</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>     <span class="fu">infer</span>(dm, <span class="op">:</span>C; evidence <span class="op">=</span> impossible)</span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a> <span class="cf">catch</span> <span class="cn">e</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>     <span class="fu">typeof</span>(<span class="cn">e</span>)</span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a> <span class="cf">end</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>(rare_chain = ImpossibleEvidenceError, contradiction = ImpossibleEvidenceError)</code></pre>
+<pre><code>(rare_chain = [0.9, 0.1], contradiction = ImpossibleEvidenceError)</code></pre>
 </div>
 </div>
-<p>Both raise, and the two situations are not the same: one answer exists and cannot be reached in Float64, the other does not exist. <code>mass_status</code> records which:</p>
+<p><code>ImpossibleEvidenceError</code> therefore means probability exactly zero: the answer does not exist. <code>mass_status</code> records which situation a log-domain run was in:</p>
 <div id="18" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a>(rare <span class="op">=</span> <span class="fu">compare</span>(<span class="fl">340</span>).status, ordinary <span class="op">=</span> <span class="fu">compare</span>(<span class="fl">20</span>).status)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>(rare = :underflow, ordinary = :finite)</code></pre>
 </div>
 </div>
-<p>An impossible observation still raises under the log backend — there is no posterior to return — but <code>log_evidence_probability</code> gives <code>-Inf</code> rather than an exception, so a caller can test feasibility before committing to a query.</p>
+<p>An impossible observation raises under every backend, since there is no posterior to return, but <code>log_evidence_probability</code> gives <code>-Inf</code> rather than an exception, so a caller can test feasibility before committing to a query.</p>
 </section>
 <section id="every-marginal-at-once" class="level2">
 <h2 class="anchored" data-anchor-id="every-marginal-at-once">Every marginal at once</h2>
@@ -2582,29 +2566,27 @@ window.Quarto = {
 <pre><code>(2.2250738585072014e-308, 0.0)</code></pre>
 </div>
 </div>
-<p>Two further limits, both deliberate. A factor graph rejects an entry that is not finite or is negative by more than its tolerance when it is built (<code>FactorEntryError</code>), exactly as a kernel does. An entry a hair below zero — the kind rounding produces, within the tolerance — is a valid entry, but it has no logarithm, so the log backends reject it rather than silently producing <code>NaN</code>:</p>
+<p>Two further limits, both deliberate. A factor graph rejects an entry that is not finite or is negative by more than its tolerance when it is built (<code>FactorEntryError</code>), exactly as a kernel does. An entry a hair below zero — the kind rounding produces, within the tolerance — is a valid entry, but it has no logarithm, so the log backends reject it rather than silently producing <code>NaN</code>. The default backend accepts it, but a posterior cell that comes out negative is not a probability, and it refuses to return one rather than clamp it (<code>IndeterminatePosteriorError</code>, ADR 0014):</p>
 <div id="26" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>X <span class="op">=</span> <span class="fu">FiniteAxis</span>(<span class="op">:</span>X, [<span class="op">:</span>a, <span class="op">:</span>b])</span>
-<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>(invalid <span class="op">=</span> <span class="cf">try</span></span>
-<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>     <span class="fu">FactorGraph</span>([<span class="fu">Factor</span>(X, [<span class="fl">0.5</span>, <span class="op">-</span><span class="fl">0.5</span>])])</span>
-<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a> <span class="cf">catch</span> <span class="cn">e</span></span>
-<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>     <span class="fu">typeof</span>(<span class="cn">e</span>)</span>
-<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a> <span class="cf">end</span>,</span>
-<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a> rounded_negative <span class="op">=</span> <span class="cf">try</span></span>
-<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a>     <span class="fu">infer</span>(<span class="fu">FactorGraph</span>([<span class="fu">Factor</span>(X, [<span class="fl">1.0</span> <span class="op">+</span> <span class="fl">1e-12</span>, <span class="op">-</span><span class="fl">1e-12</span>])]), [<span class="op">:</span>X];</span>
-<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a>           backend <span class="op">=</span> <span class="fu">LogVariableElimination</span>())</span>
-<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a> <span class="cf">catch</span> <span class="cn">e</span></span>
-<span id="cb24-11"><a href="#cb24-11" aria-hidden="true" tabindex="-1"></a>     <span class="fu">typeof</span>(<span class="cn">e</span>)</span>
-<span id="cb24-12"><a href="#cb24-12" aria-hidden="true" tabindex="-1"></a> <span class="cf">end</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>rounded <span class="op">=</span> <span class="fu">FactorGraph</span>([<span class="fu">Factor</span>(X, [<span class="fl">1.0</span> <span class="op">+</span> <span class="fl">1e-12</span>, <span class="op">-</span><span class="fl">1e-12</span>])])</span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a><span class="fu">outcome</span>(f) <span class="op">=</span> <span class="cf">try</span></span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">f</span>()</span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a><span class="cf">catch</span> <span class="cn">e</span></span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">typeof</span>(<span class="cn">e</span>)</span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span>
+<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a>(invalid <span class="op">=</span> <span class="fu">outcome</span>(() <span class="op">-&gt;</span> <span class="fu">FactorGraph</span>([<span class="fu">Factor</span>(X, [<span class="fl">0.5</span>, <span class="op">-</span><span class="fl">0.5</span>])])),</span>
+<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a> log_domain <span class="op">=</span> <span class="fu">outcome</span>(() <span class="op">-&gt;</span> <span class="fu">infer</span>(rounded, [<span class="op">:</span>X]; backend <span class="op">=</span> <span class="fu">LogVariableElimination</span>())),</span>
+<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a> default <span class="op">=</span> <span class="fu">outcome</span>(() <span class="op">-&gt;</span> <span class="fu">infer</span>(rounded, [<span class="op">:</span>X])))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>(invalid = FactorEntryError, rounded_negative = LogFactorDomainError)</code></pre>
+<pre><code>(invalid = FactorEntryError, log_domain = LogFactorDomainError, default = IndeterminatePosteriorError)</code></pre>
 </div>
 </div>
 <p>And an empty query keeps the ordinary unnormalised-mass API, with the log mass available in the diagnostics rather than replacing the returned value.</p>
 </section>
 <section id="summary" class="level2">
 <h2 class="anchored" data-anchor-id="summary">Summary</h2>
-<p>Log-domain inference is not a different algorithm: <code>LogVariableElimination</code> and <code>LogJunctionTree</code> run the same elimination order and the same message schedule as their ordinary counterparts <span class="citation" data-cites="Dechter1999 KollerFriedman2009">(<a href="#ref-Dechter1999" role="doc-biblioref">Dechter 1999</a>; <a href="#ref-KollerFriedman2009" role="doc-biblioref">Koller and Friedman 2009</a>)</span>, with products replaced by sums and sums by log-sum-exp on centered factors. What it buys is the range to carry evidence that is merely rare, and — because a finite log mass and <code>-Inf</code> are different numbers, whereas zero and zero are not — the ability to say whether an observation was too small to represent or genuinely impossible. What it does not buy is a bound on the error of a posterior cell, which is why the default backends are unchanged and this layer is opt-in.</p>
+<p>Log-domain inference is not a different algorithm: <code>LogVariableElimination</code> and <code>LogJunctionTree</code> run the same elimination order and the same message schedule as their ordinary counterparts <span class="citation" data-cites="Dechter1999 KollerFriedman2009">(<a href="#ref-Dechter1999" role="doc-biblioref">Dechter 1999</a>; <a href="#ref-KollerFriedman2009" role="doc-biblioref">Koller and Friedman 2009</a>)</span>, with products replaced by sums and sums by log-sum-exp on centered factors. What it buys is the range to carry evidence that is merely rare, and — because a finite log mass and <code>-Inf</code> are different numbers, whereas zero and zero are not — the ability to say whether an observation was too small to represent or genuinely impossible. The default backends fall back to it exactly when their Float64 mass cannot make that distinction, so <code>ImpossibleEvidenceError</code> means probability exactly zero everywhere. What it does not buy is a bound on the error of a posterior cell.</p>
 <p>The exact-arithmetic decision path of <code>InfluenceDiagrams.jl</code> answers the same concern for decisions rather than posteriors, where the quantity at risk is a sum of signed utilities rather than a product of probabilities.</p>
 </section>
 <section id="references" class="level2">

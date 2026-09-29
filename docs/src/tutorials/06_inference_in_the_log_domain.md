@@ -25,10 +25,9 @@ an exact backend cannot form a posterior at all: dividing by zero mass
 is not a rounding error, it is a missing answer.
 
 The awkward part is that a genuinely impossible observation also has
-zero mass. In ordinary arithmetic the two are indistinguishable, and the
-error is the same.
+zero mass. In ordinary arithmetic the two are indistinguishable.
 
-This vignette covers the opt-in log-domain layer, which addresses both:
+This vignette covers the log-domain layer, which addresses both:
 
 - `LogVariableElimination` and `LogJunctionTree` carry centered
   log-domain factors and combine them with log-sum-exp, so the
@@ -39,8 +38,10 @@ This vignette covers the opt-in log-domain layer, which addresses both:
 - `LogInferenceDiagnostics.mass_status` reports `:finite`, `:underflow`
   or `:zero`, so a run says which situation it was in.
 
-The default backends are unchanged. This layer is opt-in, and the last
-section is explicit about what it does *not* promise.
+The default backends use this layer as a fallback: when the Float64
+evidence mass is not a normal positive number, they recompute the answer
+in the log domain rather than trust it (ADR 0014). The last section is
+explicit about what the layer does *not* promise.
 
 ## Setup
 
@@ -94,21 +95,20 @@ That closed form is the oracle for everything below.
 
 ## Where ordinary arithmetic gives out
 
-Running the default backend as the chain grows shows three regimes
-rather than two.
+The Float64 evidence mass goes through three regimes as the chain grows:
+a normal number, a subnormal one, and zero. The log-domain backend
+reports the log mass and its status alongside the default backend’s
+answer and whether it fell back:
 
 ``` julia
 function compare(n)
     mm, vv = detection_chain(n)
     ev = Dict(v => :yes for v in vv[1:(n - 1)])
-    default = try
-        p, _ = infer(mm, vv[n]; evidence = ev)
-        round.(p.table; digits = 4)
-    catch e
-        typeof(e)
-    end
+    q, info = infer(mm, vv[n]; evidence = ev)
     p, d = infer(mm, vv[n]; evidence = ev, backend = LogVariableElimination())
-    return (n = n, default = default, log_domain = round.(p.table; digits = 4),
+    return (n = n, default = round.(q.table; digits = 4),
+            route = info.log_fallback ? :log_fallback : :float64,
+            log_domain = round.(p.table; digits = 4),
             log_mass = round(d.log_evidence_probability; digits = 1),
             status = d.mass_status)
 end
@@ -116,29 +116,32 @@ end
 [compare(n) for n in (300, 320, 340, 400)]
 ```
 
-    4-element Vector{NamedTuple{(:n, :default, :log_domain, :log_mass, :status)}}:
-     (n = 300, default = [0.9, 0.1], log_domain = [0.9, 0.1], log_mass = -693.1, status = :finite)
-     (n = 320, default = [0.901, 0.099], log_domain = [0.9, 0.1], log_mass = -739.1, status = :finite)
-     (n = 340, default = ImpossibleEvidenceError, log_domain = [0.9, 0.1], log_mass = -785.2, status = :underflow)
-     (n = 400, default = ImpossibleEvidenceError, log_domain = [0.9, 0.1], log_mass = -923.3, status = :underflow)
+    4-element Vector{@NamedTuple{n::Int64, default::Vector{Float64}, route::Symbol, log_domain::Vector{Float64}, log_mass::Float64, status::Symbol}}:
+     (n = 300, default = [0.9, 0.1], route = :float64, log_domain = [0.9, 0.1], log_mass = -693.1, status = :finite)
+     (n = 320, default = [0.9, 0.1], route = :log_fallback, log_domain = [0.9, 0.1], log_mass = -739.1, status = :finite)
+     (n = 340, default = [0.9, 0.1], route = :log_fallback, log_domain = [0.9, 0.1], log_mass = -785.2, status = :underflow)
+     (n = 400, default = [0.9, 0.1], route = :log_fallback, log_domain = [0.9, 0.1], log_mass = -923.3, status = :underflow)
 
-At 300 sites the two agree. At 320 the default backend still returns an
-answer, but it is no longer the right one — the fourth decimal has
-moved, because the mass is near the bottom of the representable range
-and the significand has been eaten away. At 340 the mass underflows to
-zero and the default backend raises, correctly, because it cannot form a
-posterior from zero.
-
-The log-domain backend returns the exact answer throughout:
+At 300 sites the mass is an ordinary Float64 and the default backend
+answers directly. At 320 the mass is subnormal: it is not zero (so
+`mass_status` is still `:finite`), but most of its significand has gone,
+and a posterior normalised by it would be wrong in the fourth decimal,
+`[0.901, 0.099]`. At 340 it underflows to zero, which Float64 cannot
+tell apart from a contradiction. The default backend trusts a mass only
+when it is a normal positive number; in the other two regimes it reruns
+the query in the log domain and says so in the diagnostics’
+`log_fallback`. Both paths return the exact answer throughout:
 
 ``` julia
-all(compare(n).log_domain == exact for n in (300, 320, 340, 400))
+all(compare(n).default == exact && compare(n).log_domain == exact
+    for n in (300, 320, 340, 400))
 ```
 
     true
 
-The middle regime is the one worth dwelling on: silent precision loss
-arrives *before* outright failure, and only the closed form reveals it.
+The middle regime is why the test is “normal”, not “nonzero”: silent
+precision loss arrives *before* outright underflow, and only the closed
+form would reveal it.
 
 ## Evidence mass, and telling rare from impossible
 
@@ -168,16 +171,13 @@ log_evidence_probability(dm; evidence = impossible)
 
     -Inf
 
-`-Inf`, not a small number. The two cases are now distinguishable, which
-they are not in ordinary arithmetic: there, both the rare chain and the
-contradictory observation produce zero mass and the same error.
+`-Inf`, not a small number. The two cases are distinguishable here,
+which they are not in ordinary arithmetic, where both produce a mass of
+zero. That is what lets the default backend answer one and reject the
+other:
 
 ``` julia
-(rare_chain = try
-     infer(m340, :D340; evidence = rare)
- catch e
-     typeof(e)
- end,
+(rare_chain = round.(first(infer(m340, :D340; evidence = rare)).table; digits = 4),
  contradiction = try
      infer(dm, :C; evidence = impossible)
  catch e
@@ -185,11 +185,11 @@ contradictory observation produce zero mass and the same error.
  end)
 ```
 
-    (rare_chain = ImpossibleEvidenceError, contradiction = ImpossibleEvidenceError)
+    (rare_chain = [0.9, 0.1], contradiction = ImpossibleEvidenceError)
 
-Both raise, and the two situations are not the same: one answer exists
-and cannot be reached in Float64, the other does not exist.
-`mass_status` records which:
+`ImpossibleEvidenceError` therefore means probability exactly zero: the
+answer does not exist. `mass_status` records which situation a
+log-domain run was in:
 
 ``` julia
 (rare = compare(340).status, ordinary = compare(20).status)
@@ -197,10 +197,10 @@ and cannot be reached in Float64, the other does not exist.
 
     (rare = :underflow, ordinary = :finite)
 
-An impossible observation still raises under the log backend — there is
-no posterior to return — but `log_evidence_probability` gives `-Inf`
-rather than an exception, so a caller can test feasibility before
-committing to a query.
+An impossible observation raises under every backend, since there is no
+posterior to return, but `log_evidence_probability` gives `-Inf` rather
+than an exception, so a caller can test feasibility before committing to
+a query.
 
 ## Every marginal at once
 
@@ -250,24 +250,25 @@ that is not finite or is negative by more than its tolerance when it is
 built (`FactorEntryError`), exactly as a kernel does. An entry a hair
 below zero — the kind rounding produces, within the tolerance — is a
 valid entry, but it has no logarithm, so the log backends reject it
-rather than silently producing `NaN`:
+rather than silently producing `NaN`. The default backend accepts it,
+but a posterior cell that comes out negative is not a probability, and
+it refuses to return one rather than clamp it
+(`IndeterminatePosteriorError`, ADR 0014):
 
 ``` julia
 X = FiniteAxis(:X, [:a, :b])
-(invalid = try
-     FactorGraph([Factor(X, [0.5, -0.5])])
- catch e
-     typeof(e)
- end,
- rounded_negative = try
-     infer(FactorGraph([Factor(X, [1.0 + 1e-12, -1e-12])]), [:X];
-           backend = LogVariableElimination())
- catch e
-     typeof(e)
- end)
+rounded = FactorGraph([Factor(X, [1.0 + 1e-12, -1e-12])])
+outcome(f) = try
+    f()
+catch e
+    typeof(e)
+end
+(invalid = outcome(() -> FactorGraph([Factor(X, [0.5, -0.5])])),
+ log_domain = outcome(() -> infer(rounded, [:X]; backend = LogVariableElimination())),
+ default = outcome(() -> infer(rounded, [:X])))
 ```
 
-    (invalid = FactorEntryError, rounded_negative = LogFactorDomainError)
+    (invalid = FactorEntryError, log_domain = LogFactorDomainError, default = IndeterminatePosteriorError)
 
 And an empty query keeps the ordinary unnormalised-mass API, with the
 log mass available in the diagnostics rather than replacing the returned
@@ -284,9 +285,10 @@ by log-sum-exp on centered factors. What it buys is the range to carry
 evidence that is merely rare, and — because a finite log mass and `-Inf`
 are different numbers, whereas zero and zero are not — the ability to
 say whether an observation was too small to represent or genuinely
-impossible. What it does not buy is a bound on the error of a posterior
-cell, which is why the default backends are unchanged and this layer is
-opt-in.
+impossible. The default backends fall back to it exactly when their
+Float64 mass cannot make that distinction, so `ImpossibleEvidenceError`
+means probability exactly zero everywhere. What it does not buy is a
+bound on the error of a posterior cell.
 
 The exact-arithmetic decision path of `InfluenceDiagrams.jl` answers the
 same concern for decisions rather than posteriors, where the quantity at
