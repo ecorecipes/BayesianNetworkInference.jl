@@ -103,10 +103,13 @@ arithmetic can compute. Reporting such a case as an error hands the caller a pro
   NaN posterior being returned. No conformance fixture has tolerated negative entries.
 - The frozen names `ImpossibleEvidenceError`, `IrregularDiagramError` and `ScopeError` keep their bindings and their
   unqualified printing.
-- **Conformance.** The Julia adapter's `evidence-underflow` and `subnormal-posterior` stress queries now return the
-  exact posterior. `stress.py` used to classify them as expected precision limits (`evidence_underflow` and
-  `subnormal_product_loss`). It now classifies them as `strict_agreement`. Nothing pins those counts, and no protocol
-  or version bump is needed.
+- **Conformance.** The Julia adapter's stress queries whose evidence mass is below `floatmin` now return a posterior.
+  - `subnormal-posterior` agrees bit for bit with the exact reference. `stress.py` used to classify it as
+    `subnormal_product_loss` and now classifies it as `strict_agreement`.
+  - `evidence-underflow` returns `[0.25, 0.7499999999999999]`, one unit in the last place from the exact `0.75`: the
+    log domain does not round correctly. Strict agreement fails, so `stress.py` still classifies it as
+    `evidence_underflow`, by the underflowed mass.
+  - The stress stage passes, nothing pins those counts, and no protocol or version bump is needed.
 - **The `stable = true` options remain.** They are no longer needed for rare evidence. They are still the paths that
   avoid cancellation among large signed utilities.
 - **Separate fix.** While testing the 340-site cases, the brute-force state counts in `BayesianNetworks`,
