@@ -37,9 +37,12 @@ ADR 0013 set the roots and the boundary rules. Its record of item 15 left four f
      `:trace_variable_elimination` and `:stable_decision_elimination`. The packages are unregistered, so there is
      no deprecation binding.
 
-   `schedule_adapter.jl` labels a `ScopeError` as `invalid_order` only when its operation is
-   `:decision_elimination`, which only the ordering guards raise. The frozen native-schedule records are unchanged:
-   all five of their `invalid_order` rejections come from those guards.
+   `conformance/adapters/julia/schedule_adapter.jl` is a frozen controller: the policy-identity audit checks its
+   hash, so it is not edited. It still labels every `ScopeError` as `invalid_order`, but that label is now accurate.
+   A trace limit or backend-domain failure is no longer a `ScopeError`, so the adapter rethrows it instead of
+   mislabelling it. The only `ScopeError`s decision elimination can still raise are its ordering guards and the
+   valuation algebra's internal scope checks. The frozen native-schedule records are unchanged: all five of their
+   `invalid_order` rejections come from the ordering guards.
 2. **A name is reported by the layer that named it.** Every method on a `BayesModel` checks its variable and state
    names after `compile` and raises `BayesianNetworks`' `UnknownVariableError` or `UnknownStateError`, as `marginal`
    does. The methods are `infer`, `posterior`, `all_marginals`, `log_evidence_probability`,
