@@ -268,7 +268,7 @@ end
  default = outcome(() -> infer(rounded, [:X])))
 ```
 
-    (invalid = FactorEntryError, log_domain = LogFactorDomainError, default = IndeterminatePosteriorError)
+    (invalid = FactorEntryError, log_domain = FactorDomainError, default = IndeterminatePosteriorError)
 
 And an empty query keeps the ordinary unnormalised-mass API, with the
 log mass available in the diagnostics rather than replacing the returned

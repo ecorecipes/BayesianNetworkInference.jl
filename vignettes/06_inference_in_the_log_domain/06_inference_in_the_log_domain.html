@@ -2579,7 +2579,7 @@ window.Quarto = {
 <span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a> log_domain <span class="op">=</span> <span class="fu">outcome</span>(() <span class="op">-&gt;</span> <span class="fu">infer</span>(rounded, [<span class="op">:</span>X]; backend <span class="op">=</span> <span class="fu">LogVariableElimination</span>())),</span>
 <span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a> default <span class="op">=</span> <span class="fu">outcome</span>(() <span class="op">-&gt;</span> <span class="fu">infer</span>(rounded, [<span class="op">:</span>X])))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>(invalid = FactorEntryError, log_domain = LogFactorDomainError, default = IndeterminatePosteriorError)</code></pre>
+<pre><code>(invalid = FactorEntryError, log_domain = FactorDomainError, default = IndeterminatePosteriorError)</code></pre>
 </div>
 </div>
 <p>And an empty query keeps the ordinary unnormalised-mass API, with the log mass available in the diagnostics rather than replacing the returned value.</p>
