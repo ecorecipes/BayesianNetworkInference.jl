@@ -13,7 +13,7 @@ function LogVariableElimination(; order::EliminationStrategy=MinFill())
     return LogVariableElimination(order)
 end
 
-# `LogFactorDomainError` is defined in errors.jl.
+# `FactorDomainError` is defined in errors.jl.
 
 """
     LogInferenceDiagnostics(order, max_factor_size, n_multiplications, treewidth,
@@ -51,13 +51,14 @@ function _as_log_factor(factor::Factor)
     for index in CartesianIndices(factor.table)
         value = factor.table[index]
         isfinite(value) && value >= 0 ||
-            throw(LogFactorDomainError(copy(factor.vars), Tuple(index), value))
+            throw(FactorDomainError(:log_domain, copy(factor.vars), Tuple(index), value))
         if iszero(value)
             table[index] = -Inf
         else
             logarithm = Float64(log(value))
             isfinite(logarithm) ||
-                throw(LogFactorDomainError(copy(factor.vars), Tuple(index), value))
+                throw(FactorDomainError(:log_domain, copy(factor.vars), Tuple(index),
+                                        value))
             table[index] = logarithm
         end
     end

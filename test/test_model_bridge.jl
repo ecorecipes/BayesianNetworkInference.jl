@@ -152,11 +152,13 @@ end
         @test evidence(mo) == ev
         # errors
         @test_throws ScopeError infer(mo, :Vegetation)
-        @test_throws ScopeError infer(m, :Nope)
+        # A name the model lacks is BayesianNetworks' label error (ADR 0015).
+        @test_throws BayesianNetworks.UnknownVariableError infer(m, :Nope)
         @test_throws ScopeError infer(m, [:Occupancy, :Occupancy])
-        @test_throws ScopeError infer(m, :Occupancy; evidence=Dict(:Nope => :x))
-        @test_throws FiniteKernels.InvalidAxisError infer(m, :Occupancy;
-                                                          evidence=Dict(:Climate => :arid))
+        @test_throws BayesianNetworks.UnknownVariableError infer(m, :Occupancy;
+                                                                 evidence=Dict(:Nope => :x))
+        @test_throws BayesianNetworks.UnknownStateError infer(m, :Occupancy;
+                                                              evidence=Dict(:Climate => :arid))
         # posterior as a dictionary
         pd = posterior(m, :Occupancy; evidence=ev)
         @test pd isa Dict{Symbol,Float64}

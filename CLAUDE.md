@@ -59,6 +59,14 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   `BayesianNetworkFormatsError` is re-exported, never its concrete types: the conformance adapters
   load this package with `using`, and the inspect adapter records Formats' types under their
   qualified names.
+- Label errors follow the layer (ADR 0015). Every method on a `BayesModel` (`infer`, `posterior`,
+  `all_marginals`, `log_evidence_probability`, `trace_variable_elimination`, `entropy`,
+  `mutual_information`, `sensitivity`, `tornado`, `predict`, `baseline`, `evaluate`) checks names with
+  `_check_labels` / `_check_case_labels` after `compile` and raises BN's `UnknownVariableError` /
+  `UnknownStateError`, as `BayesianNetworks.marginal` does. The `FactorGraph` methods keep `ScopeError` and
+  FiniteKernels' `InvalidAxisError`. A new model-level entry point must call the check.
+- `ScopeError` means a scope or argument-scope problem only. Trace budgets and profile limits are
+  `TraceLimitError`; an entry a backend's arithmetic cannot take is `FactorDomainError` (ADR 0015).
 - BP convergence uses the undamped residual at the returned iterate, not the damped step and not a
   marginal-error bound. `check_evidence=true` opts into VE feasibility; `evidence_checked=false`
   leaves global feasibility unknown. Integer inputs promote to division-compatible types.
@@ -68,17 +76,21 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
 
 ## Layout
 
-- `src/errors.jl` (included first): the root `InferenceError <: BayesNetError` and the four exception types
+- `src/errors.jl` (included first): the root `InferenceError <: BayesNetError` and the exception types
   with their `showerror` methods: `ScopeError` and `ShapeError` (factor scopes and table shapes, and the
-  argument checks of the entry points built on them), `CompileError` (open model / missing kernels, naming
-  the variables) and `LogFactorDomainError` (a factor entry the log domain cannot take).
+  argument checks of the entry points built on them; nothing else, ADR 0015), `CompileError` (open model /
+  missing kernels, naming the variables), `FactorEntryError` (a factor-graph entry that is not finite or is
+  below `-atol`), `FactorDomainError` (a valid entry a backend's arithmetic cannot take: `:log_domain`,
+  `:trace_variable_elimination`, InfluenceDiagrams' `:stable_decision_elimination`) and `TraceLimitError`
+  (a run an execution trace cannot record: cell budgets, the Float64-only profile, an underflowed mass;
+  InfluenceDiagrams' trace raises it too).
 - `src/factors.jl`: `Factor`, `unit_factor`, `scope`, `axis`, `multiply`, `marginalize`,
   `maximize`, `argmax_table`, `condition`, `normalize` (extends `LinearAlgebra.normalize`), `reorder`, kernel conversions.
 - `src/factor_graph.jl`: `FactorGraph` (factors, axes, provenance), `variables`, `interaction_graph` (Graphs.SimpleGraph
   plus variable/vertex maps; already the moral graph). The keyword constructor checks entries (finite, `>= -atol`,
   else `FactorEntryError`; `check = false` opts out) once per graph; the inner `FactorGraph{T}(factors, provenance)`
   never checks and is what `compile` and InfluenceDiagrams' signed ordering graph use. Entries in `[-atol, 0)` are
-  valid here and still rejected by the log backends (`LogFactorDomainError`), a backend-domain restriction.
+  valid here and still rejected by the log backends (`FactorDomainError`), a backend-domain restriction.
 - `src/orderings.jl`: `EliminationStrategy` types `MinFill` (CliqueTrees `MF`), `MinDegree` (`MMD`), `AMDOrder` (`AMD`,
   needs `import AMD`), `ExactTreewidth` (`BT`, needs `import TreeWidthSolver`; run per connected component because BT
   fails on isolated vertices), `UserOrder`; `elimination_order(fg, strategy; keep)` via
@@ -214,5 +226,5 @@ JuliaFormatter `yas`; docstrings on every exported name, which `test/test_docstr
 build is strict (no `warnonly`), so a docstring left out of the manual or a broken `@ref` fails it; typed
 exceptions with variable names in the message, following ADR 0013: they live in `src/errors.jl` and subtype
 the nearest root (`FiniteKernelsError`, `BayesianNetworkFormatsError` or `BayesNetError`), invalid arguments
-and keywords raise `ArgumentError`, typed errors from a lower package pass through unchanged and documented,
+and keywords raise `ArgumentError`, typed errors from a lower package pass through unchanged and documented, content read from a file, document or manifest is checked before it is converted and raises the package's typed error (ADR 0015: never catch the `MethodError` or `InexactError` of an unchecked conversion),
 and another package's type is named as a code span, never with `@ref`; no emojis in code or docs.

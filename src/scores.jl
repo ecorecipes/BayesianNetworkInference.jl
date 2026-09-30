@@ -177,8 +177,11 @@ method there is no model to read that from, so the keyword `base_evidence`
 carries it; pass it directly to condition every case on the same background
 evidence.
 
-Throws [`ScopeError`](@ref) if `target` or an evidence variable is not a
-variable of the model, and `BayesianNetworks.ImpossibleEvidenceError`, carrying
+On the model method, a `target` or evidence variable the model does not have is
+`BayesianNetworks.UnknownVariableError`, and a case state its variable does not have
+is `BayesianNetworks.UnknownStateError` (ADR 0015). On the factor-graph method these
+are [`ScopeError`](@ref) and `FiniteKernels`' `InvalidAxisError`. Either method
+throws `BayesianNetworks.ImpossibleEvidenceError`, carrying
 the failing case's merged evidence, if a case's evidence has probability
 exactly zero under the model.
 """
@@ -215,9 +218,31 @@ function predict(fg::FactorGraph, cases, target::Symbol;
     return Predictions(target, ax, probs, outcomes, ev_vars)
 end
 
+# The model-level label check of `predict` and `evaluate` (ADR 0015): the target and any
+# listed evidence variable must be variables of the model, and a case's state for the
+# target or for a variable it enters must be one of that variable's states. A case may
+# record other variables; they are never entered, so they are not checked.
+function _check_case_labels(m::BayesModel, cs::Cases, target::Symbol, evidence_vars)
+    _check_variable(m, target)
+    entered = if evidence_vars === nothing
+        Set{Symbol}(BayesianNetworks.variable_names(syntax(m)))
+    else
+        foreach(x -> _check_variable(m, x), evidence_vars)
+        Set{Symbol}(evidence_vars)
+    end
+    for case in cs, (x, s) in case
+        (x == target || x in entered) && _check_state(m, x, s)
+    end
+    return nothing
+end
+
 function predict(m::BayesModel, cases, target::Symbol;
+                 evidence_vars::Union{Nothing,AbstractVector{Symbol}}=nothing,
                  atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
-    return predict(compile(m; atol=atol), cases, target;
+    fg = compile(m; atol=atol)
+    cs = Cases(cases)
+    _check_case_labels(m, cs, target, evidence_vars)
+    return predict(fg, cs, target; evidence_vars,
                    base_evidence=Dict{Symbol,Symbol}(BayesianNetworks.evidence(m)),
                    kwargs...)
 end
@@ -910,8 +935,14 @@ function evaluate(fg::FactorGraph, cases, target::Symbol;
 end
 
 function evaluate(m::BayesModel, cases, target::Symbol;
+                  evidence_vars::Union{Nothing,AbstractVector{Symbol}}=nothing,
+                  state::Union{Nothing,Symbol}=nothing,
                   atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
-    return evaluate(compile(m; atol=atol), cases, target;
+    fg = compile(m; atol=atol)
+    cs = Cases(cases)
+    _check_case_labels(m, cs, target, evidence_vars)
+    state === nothing || _check_state(m, target, state)
+    return evaluate(fg, cs, target; evidence_vars, state,
                     base_evidence=Dict{Symbol,Symbol}(BayesianNetworks.evidence(m)),
                     kwargs...)
 end

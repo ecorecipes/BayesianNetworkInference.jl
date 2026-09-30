@@ -11,6 +11,32 @@ function _model_evidence(m::BayesModel, ev)
     return merge(Dict{Symbol,Symbol}(BayesianNetworks.evidence(m)), _evidence_dict(ev))
 end
 
+# Model-level entry points name the model's variables and states, so an unknown name is
+# `BayesianNetworks`' `UnknownVariableError` or `UnknownStateError`, as `marginal` raises
+# (ADR 0015). The factor-graph methods keep `ScopeError` and `InvalidAxisError`: a factor
+# graph has no model to name.
+function _check_labels(m::BayesModel, vars, ev=Dict{Symbol,Symbol}())
+    for x in vars
+        _check_variable(m, x)
+    end
+    for (x, s) in ev
+        _check_state(m, x, s)
+    end
+    return nothing
+end
+function _check_variable(m::BayesModel, x::Symbol)
+    BayesianNetworks.has_variable(syntax(m), x) ||
+        throw(BayesianNetworks.UnknownVariableError(x))
+    return nothing
+end
+function _check_state(m::BayesModel, x::Symbol, s::Symbol)
+    _check_variable(m, x)
+    bn = syntax(m)
+    s in BayesianNetworks.states(bn, BayesianNetworks.variable_id(bn, x)) ||
+        throw(BayesianNetworks.UnknownStateError(x, s))
+    return nothing
+end
+
 # The tolerance budget (ADR 0014, and BayesianNetworks' `marginal`): a validated model may
 # hold entries in [-atol, 0), and when it does, evidence whose mass is within the budget
 # (1 + atol)^n - 1 of zero leaves the posterior's sign to the rounding. Only the model-level
@@ -48,9 +74,11 @@ distribution `P(Y | do(X = x))`, while `infer(observe(m, :X => :x), :Y)` is
 the conditional `P(Y | X = x)`.
 
 Throws [`CompileError`](@ref) (or a `BayesianNetworks` exception) when the
-model cannot be compiled, [`ScopeError`](@ref) for unknown or repeated
-query variables, unknown evidence variables, or a query variable that also
-carries evidence, and `BayesianNetworks.ImpossibleEvidenceError` for a
+model cannot be compiled, `BayesianNetworks.UnknownVariableError` for a query
+or evidence variable the model does not have and `BayesianNetworks.UnknownStateError`
+for an evidence state its variable does not have (as `BayesianNetworks.marginal`
+does; ADR 0015), [`ScopeError`](@ref) for a repeated query variable or a query
+variable that also carries evidence, and `BayesianNetworks.ImpossibleEvidenceError` for a
 non-empty query when the evidence has probability exactly zero, as
 `BayesianNetworks.marginal` does. Evidence whose binary64 mass underflows is
 answered by the log-domain fallback (ADR 0014). When the model holds tolerated
@@ -83,6 +111,7 @@ function infer(m::BayesModel, query::AbstractVector{Symbol};
                atol::Real=BayesianNetworks.DEFAULT_ATOL)
     fg = compile(m; atol=atol)
     ev = _model_evidence(m, evidence)
+    _check_labels(m, query, ev)
     # An empty query returns the unnormalised mass (ADR 0011), which may be tiny or negative.
     isempty(query) || _check_tolerance_budget(fg, ev, atol)
     return infer(fg, query; evidence=ev, backend)
@@ -92,8 +121,10 @@ infer(m::BayesModel, query::Symbol; kwargs...) = infer(m, [query]; kwargs...)
 function log_evidence_probability(m::BayesModel; evidence=Dict{Symbol,Symbol}(),
                                   order::EliminationStrategy=MinFill(),
                                   atol::Real=BayesianNetworks.DEFAULT_ATOL)
-    return log_evidence_probability(compile(m; atol); evidence=_model_evidence(m, evidence),
-                                    order)
+    fg = compile(m; atol)
+    ev = _model_evidence(m, evidence)
+    _check_labels(m, Symbol[], ev)
+    return log_evidence_probability(fg; evidence=ev, order)
 end
 
 """
@@ -128,6 +159,7 @@ function all_marginals(m::BayesModel; evidence=Dict{Symbol,Symbol}(),
                        atol::Real=BayesianNetworks.DEFAULT_ATOL)
     fg = compile(m; atol=atol)
     ev = _model_evidence(m, evidence)
+    _check_labels(m, Symbol[], ev)
     _check_tolerance_budget(fg, ev, atol)
     return all_marginals(fg; evidence=ev, backend)
 end

@@ -5,8 +5,9 @@ end
 
 function _trace_factor!(recorder::_VETraceRecorder, factor::Factor{Float64})
     length(factor) <= recorder.remaining ||
-        throw(ScopeError(:trace_variable_elimination, "the trace cell budget was exceeded",
-                         copy(factor.vars)))
+        throw(TraceLimitError(:trace_variable_elimination, :cells,
+                              "a table of $(length(factor)) cells exceeds the remaining budget of $(recorder.remaining)",
+                              copy(factor.vars)))
     recorder.remaining -= length(factor)
     return Dict{String,Any}("scope" => String.(factor.vars),
                             "values" => [string(reinterpret(UInt64, value); base=16,
@@ -42,9 +43,13 @@ every actual bucket product and reduction, zero-based active-bag input indices,
 the final product and the returned result. Tables are flattened first-axis
 fastest with explicit ordered scopes and state labels.
 
-Inputs must be finite nonnegative Float64 factors. `max_entries` caps copied
-trace cells; input/query errors and impossible nonempty conditionals retain
-the ordinary API behavior. A trace is not itself a proof: an independent exact
+Inputs must be finite nonnegative Float64 factors: another entry raises
+[`FactorDomainError`](@ref), and a factor graph of another element type
+[`TraceLimitError`](@ref). `max_entries` caps copied trace cells
+(`TraceLimitError` when exceeded); input/query errors and impossible nonempty
+conditionals retain the ordinary API behavior. The v1 profile records binary64
+execution, so a query whose evidence mass underflows raises `TraceLimitError`
+rather than falling back to the log domain as `variable_elimination` does. A trace is not itself a proof: an independent exact
 consumer may reject numerical drift or nonfinite intermediates. Model-level
 capture starts after [`compile`](@ref), so it does not certify the compiler or
 source-CPT transcription. Metadata is descriptive, not installation attestation.
@@ -58,10 +63,10 @@ function trace_variable_elimination(fg::FactorGraph{Float64}, query::AbstractVec
         throw(ArgumentError("max_entries must be a positive representable integer"))
     _check_query(fg, query, evidence)
     for factor in fg.factors
-        all(value -> isfinite(value) && value >= 0, factor.table) ||
-            throw(ScopeError(:trace_variable_elimination,
-                             "trace inputs must be finite and nonnegative",
-                             copy(factor.vars)))
+        bad = findfirst(value -> !(isfinite(value) && value >= 0), factor.table)
+        bad === nothing ||
+            throw(FactorDomainError(:trace_variable_elimination, copy(factor.vars),
+                                    Tuple(bad), factor.table[bad]))
     end
     data = Dict{String,Any}("format" => "ecorecipes.ve-execution-trace", "version" => 1,
                             "layout" => "first-axis-fastest",
@@ -85,17 +90,18 @@ function trace_variable_elimination(fg::FactorGraph{Float64}, query::AbstractVec
     catch e
         e isa _UnresolvedMass || rethrow()
         log_evidence_probability(fg; evidence, order) == -Inf && _impossible(evidence)
-        throw(ScopeError(:trace_variable_elimination,
-                         "the binary64 evidence mass underflowed, and the v1 trace profile records binary64 execution; use LogVariableElimination for this posterior",
-                         collect(Symbol, query)))
+        throw(TraceLimitError(:trace_variable_elimination, :evidence_underflow,
+                              "the binary64 evidence mass underflowed, and the v1 trace profile records binary64 execution; use LogVariableElimination for this posterior",
+                              collect(Symbol, query)))
     end
     return result, diagnostics, data
 end
 
 function trace_variable_elimination(fg::FactorGraph, query::AbstractVector{Symbol};
                                     kwargs...)
-    return throw(ScopeError(:trace_variable_elimination,
-                            "the v1 trace profile requires Float64 factors", variables(fg)))
+    return throw(TraceLimitError(:trace_variable_elimination, :scalar_type,
+                                 "the v1 trace profile requires Float64 factors",
+                                 variables(fg)))
 end
 
 function trace_variable_elimination(fg::FactorGraph, query::Symbol; kwargs...)
@@ -107,7 +113,8 @@ function trace_variable_elimination(model::BayesModel, query;
                                     order::EliminationStrategy=MinFill(),
                                     atol::Real=BayesianNetworks.DEFAULT_ATOL,
                                     max_entries::Integer=1_000_000)
-    return trace_variable_elimination(compile(model; atol), query;
-                                      evidence=_model_evidence(model, evidence), order,
-                                      max_entries)
+    fg = compile(model; atol)
+    ev = _model_evidence(model, evidence)
+    _check_labels(model, query isa Symbol ? [query] : query, ev)
+    return trace_variable_elimination(fg, query; evidence=ev, order, max_entries)
 end

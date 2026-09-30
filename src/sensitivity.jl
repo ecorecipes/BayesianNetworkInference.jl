@@ -53,8 +53,10 @@ function entropy(fg::FactorGraph, x::Symbol; kwargs...)
 end
 function entropy(m::BayesModel, x::AbstractVector{Symbol}; evidence=Dict{Symbol,Symbol}(),
                  atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
-    return entropy(compile(m; atol=atol), x; evidence=_model_evidence(m, evidence),
-                   kwargs...)
+    fg = compile(m; atol=atol)
+    ev = _model_evidence(m, evidence)
+    _check_labels(m, x, ev)
+    return entropy(fg, x; evidence=ev, kwargs...)
 end
 entropy(m::BayesModel, x::Symbol; kwargs...) = entropy(m, [x]; kwargs...)
 
@@ -77,7 +79,9 @@ when they are d-separated by it), and equal to the entropy reduction
 `H(x) - H(x | y)` averaged over `y`.
 
 Throws [`ScopeError`](@ref) if `x == y`, if either variable carries evidence,
-or if either is unknown.
+or if either is unknown to a factor graph; on the model method an unknown variable is
+`BayesianNetworks.UnknownVariableError` and an unknown evidence state
+`BayesianNetworks.UnknownStateError`, as for [`infer`](@ref) (ADR 0015).
 """
 function mutual_information(fg::FactorGraph, x::Symbol, y::Symbol;
                             evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
@@ -99,9 +103,10 @@ end
 function mutual_information(m::BayesModel, x::Symbol, y::Symbol;
                             evidence=Dict{Symbol,Symbol}(),
                             atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
-    return mutual_information(compile(m; atol=atol), x, y;
-                              evidence=_model_evidence(m, evidence),
-                              kwargs...)
+    fg = compile(m; atol=atol)
+    ev = _model_evidence(m, evidence)
+    _check_labels(m, (x, y), ev)
+    return mutual_information(fg, x, y; evidence=ev, kwargs...)
 end
 
 """
@@ -121,7 +126,9 @@ uncertainty that observing `X` would remove on average.
 
 Variables carrying evidence, and the target itself, are skipped;
 `variables` restricts the ranking to a chosen list. A variable d-separated
-from the target by the evidence scores exactly zero.
+from the target by the evidence scores exactly zero. On the model method an unknown
+target or listed variable is `BayesianNetworks.UnknownVariableError` (ADR 0015); on the
+factor-graph method it is [`ScopeError`](@ref).
 
 A sensitivity ranking describes the model, not the world: it says which
 observations would change the answer, not whether the answer is right. Pair it
@@ -155,9 +162,12 @@ function sensitivity(fg::FactorGraph, target::Symbol;
     return sort!(collect(rows); by=r -> (-r.mutual_information, r.variable))
 end
 function sensitivity(m::BayesModel, target::Symbol; evidence=Dict{Symbol,Symbol}(),
+                     variables::Union{Nothing,AbstractVector{Symbol}}=nothing,
                      atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
-    return sensitivity(compile(m; atol=atol), target; evidence=_model_evidence(m, evidence),
-                       kwargs...)
+    fg = compile(m; atol=atol)
+    ev = _model_evidence(m, evidence)
+    _check_labels(m, variables === nothing ? [target] : vcat(target, variables), ev)
+    return sensitivity(fg, target; evidence=ev, variables, kwargs...)
 end
 
 """
@@ -180,7 +190,10 @@ finding is impossible given the evidence (its query throws
 `BayesianNetworks.ImpossibleEvidenceError`) is skipped, and a variable with no
 possible state is omitted. The evidence itself is checked first: if it is
 impossible, `ImpossibleEvidenceError` is thrown rather than an empty table
-returned.
+returned. On the model method an unknown `target` or listed variable is
+`BayesianNetworks.UnknownVariableError` and an unknown `state`
+`BayesianNetworks.UnknownStateError` (ADR 0015); on the factor-graph method they are
+[`ScopeError`](@ref) and `FiniteKernels`' `InvalidAxisError`.
 
 This is a sensitivity to findings, not to parameters: it does not perturb any
 CPT.
@@ -224,9 +237,12 @@ function tornado(fg::FactorGraph, target::Symbol, state::Symbol;
     return sort!(rows; by=r -> (-r.range, r.variable))
 end
 function tornado(m::BayesModel, target::Symbol, state::Symbol;
-                 evidence=Dict{Symbol,Symbol}(), atol::Real=BayesianNetworks.DEFAULT_ATOL,
-                 kwargs...)
-    return tornado(compile(m; atol=atol), target, state;
-                   evidence=_model_evidence(m, evidence),
-                   kwargs...)
+                 evidence=Dict{Symbol,Symbol}(),
+                 variables::Union{Nothing,AbstractVector{Symbol}}=nothing,
+                 atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
+    fg = compile(m; atol=atol)
+    ev = _model_evidence(m, evidence)
+    _check_labels(m, variables === nothing ? Symbol[] : variables, ev)
+    _check_state(m, target, state)
+    return tornado(fg, target, state; evidence=ev, variables, kwargs...)
 end

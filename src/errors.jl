@@ -23,8 +23,8 @@
     InferenceError
 
 Abstract supertype of every exception that BayesianNetworkInference defines:
-[`ScopeError`](@ref), [`ShapeError`](@ref), [`CompileError`](@ref) and
-[`LogFactorDomainError`](@ref). It subtypes `BayesianNetworks`' `BayesNetError`, the root
+[`ScopeError`](@ref), [`ShapeError`](@ref), [`CompileError`](@ref),
+[`FactorDomainError`](@ref), [`FactorEntryError`](@ref) and [`TraceLimitError`](@ref). It subtypes `BayesianNetworks`' `BayesNetError`, the root
 of `BayesianNetworks` and of every package built on it (ADR 0013). A root marks the
 dependency tier that introduced an error, not a kind of failure, so a `catch` on
 `BayesNetError` covers these errors too.
@@ -121,20 +121,62 @@ function Base.showerror(io::IO, e::CompileError)
 end
 
 """
-    LogFactorDomainError(vars, index, value)
+    FactorDomainError(backend, vars, index, value)
 
-A log-domain input factor has a negative/nonfinite entry, or an entry whose
-logarithm cannot be represented. The offending scope and table index are retained.
-Small negative values are rejected, not clamped to zero.
+A factor entry that `backend`'s arithmetic cannot take (ADR 0015). The entry is valid in a
+factor graph, which accepts finite entries down to `-atol` ([`FactorEntryError`](@ref)
+otherwise), but this backend needs more:
+
+- `:log_domain` ([`LogVariableElimination`](@ref), [`LogJunctionTree`](@ref),
+  [`log_evidence_probability`](@ref)) needs finite, nonnegative entries whose logarithm is
+  representable;
+- `:trace_variable_elimination` ([`trace_variable_elimination`](@ref)) needs finite,
+  nonnegative inputs;
+- `:stable_decision_elimination` (InfluenceDiagrams' exact decision elimination) needs
+  finite, nonnegative probabilities, since exact arithmetic does not accept tolerated
+  negative entries.
+
+`vars` is the factor's scope, `index` the entry's position in its table and `value` the
+entry. Small negative values are rejected, not clamped to zero. It replaces
+`LogFactorDomainError`, which only the log domain raised.
 """
-struct LogFactorDomainError <: InferenceError
+struct FactorDomainError <: InferenceError
+    backend::Symbol
     vars::Vector{Symbol}
     index::Tuple
     value::Real
 end
-function Base.showerror(io::IO, error::LogFactorDomainError)
-    return print(io, "LogFactorDomainError: factor over ", error.vars, " at ",
-                 error.index, " has unsupported value ", error.value)
+function Base.showerror(io::IO, e::FactorDomainError)
+    return print(io, "FactorDomainError: the ", e.backend,
+                 " backend cannot take the entry ",
+                 e.value, " at ", e.index, " of the factor over ", e.vars)
+end
+
+"""
+    TraceLimitError(trace, limit, detail, vars)
+
+An execution trace cannot record this run (ADR 0015). `trace` is the tracing function
+(`:trace_variable_elimination`, or InfluenceDiagrams' `:trace_decision_elimination`),
+`limit` names the limit that was reached and `detail` says why:
+
+- `:cells`, `:compilation_cells`: a table would exceed the `max_entries` budget;
+- `:rational_digits`: an exact rational would exceed the profile's digit limit;
+- `:scalar_type`: the v1 profile records Float64 factors only;
+- `:evidence_underflow`: the evidence mass underflowed, and the v1 profile records Float64
+  execution, so it cannot fall back to the log domain as the backends do (ADR 0014).
+
+`vars` names the factor or variables concerned. These are limits of the trace format, not
+properties of the model: the same query without a trace succeeds.
+"""
+struct TraceLimitError <: InferenceError
+    trace::Symbol
+    limit::Symbol
+    detail::String
+    vars::Vector{Symbol}
+end
+function Base.showerror(io::IO, e::TraceLimitError)
+    return print(io, "TraceLimitError in ", e.trace, " (", e.limit, "): ", e.detail,
+                 isempty(e.vars) ? "" : string(" [", join(e.vars, ", "), "]"))
 end
 
 """

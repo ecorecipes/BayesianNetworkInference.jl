@@ -16,21 +16,36 @@
            for value in [0.1875, 0.09375, 0.0625, 0.65625]]
     @test graph.factors == before
     @test trace["result"]["values"] isa Vector{String}
-    @test_throws ScopeError trace_variable_elimination(graph, :B; max_entries=1)
+    budget = try
+        trace_variable_elimination(graph, :B; max_entries=1)
+    catch e
+        e
+    end
+    @test budget isa TraceLimitError && budget.limit === :cells &&
+          budget.trace === :trace_variable_elimination
     @test_throws ScopeError trace_variable_elimination(graph, :B; evidence=Dict(:B => :off))
     # An entry below -atol is rejected when the graph is built; one within the tolerance
-    # builds, and the trace's own non-negativity guard still rejects it.
+    # builds, and the trace's own non-negativity guard still rejects it (ADR 0015).
     @test_throws FactorEntryError FactorGraph([Factor(a, [-0.1, 1.1])])
-    @test_throws ScopeError trace_variable_elimination(FactorGraph([Factor(a,
-                                                                           [-0.1, 1.1])];
-                                                                   check=false), :A)
-    @test_throws ScopeError trace_variable_elimination(FactorGraph([Factor(a,
-                                                                           [-1e-12,
-                                                                            1.0 + 1e-12])]),
-                                                       :A)
-    @test_throws ScopeError trace_variable_elimination(FactorGraph([Factor(a,
-                                                                           [1 // 4, 3 // 4])]),
-                                                       :A)
+    @test_throws FactorDomainError trace_variable_elimination(FactorGraph([Factor(a,
+                                                                                  [-0.1,
+                                                                                   1.1])];
+                                                                          check=false), :A)
+    tolerated = try
+        trace_variable_elimination(FactorGraph([Factor(a, [-1e-12, 1.0 + 1e-12])]), :A)
+    catch e
+        e
+    end
+    @test tolerated == FactorDomainError(:trace_variable_elimination, [:A], (1,), -1e-12)
+    @test_throws FactorDomainError trace_variable_elimination(FactorGraph([Factor(a,
+                                                                                  [-1e-12,
+                                                                                   1.0 +
+                                                                                   1e-12])]),
+                                                              :A)
+    @test_throws TraceLimitError trace_variable_elimination(FactorGraph([Factor(a,
+                                                                                [1 // 4,
+                                                                                 3 // 4])]),
+                                                            :A)
     _, _, observed = trace_variable_elimination(graph, :B; evidence=Dict(:A => :high))
     @test observed["conditioned"][1]["scope"] == String[]
     @test observed["conditioned"][1]["values"] == ["3fe8000000000000"]

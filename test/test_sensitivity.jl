@@ -63,7 +63,8 @@
         @test mutual_information(copy_fg, :A, :B; base=exp(1)) ≈ log(2)
         # errors
         @test_throws ScopeError mutual_information(m, :Occupancy, :Occupancy)
-        @test_throws ScopeError mutual_information(m, :Occupancy, :Nope)
+        @test_throws BayesianNetworks.UnknownVariableError mutual_information(m, :Occupancy,
+                                                                              :Nope)
         @test_throws ScopeError mutual_information(m, :Occupancy, :Vegetation;
                                                    evidence=Dict(:Occupancy => :present))
         @test_throws ArgumentError mutual_information(m, :Occupancy, :Vegetation; base=0.5)
@@ -114,7 +115,7 @@
         s2 = sensitivity(m, :Occupancy; variables=[:Vegetation, :Climate])
         @test [r.variable for r in s2] == [:Vegetation, :Climate]
         @test sensitivity(fg, :Occupancy) == s
-        @test_throws ScopeError sensitivity(m, :Nope)
+        @test_throws BayesianNetworks.UnknownVariableError sensitivity(m, :Nope)
     end
 
     @testset "tornado" begin
@@ -140,7 +141,7 @@
         tz = tornado(zero_fg, :B, :b1)
         @test length(tz) == 1 && tz[1].variable == :A
         @test tz[1].low ≈ 0.2 && tz[1].high ≈ 0.2 && tz[1].low_state == :a2
-        @test_throws ScopeError tornado(m, :Nope, :present)
-        @test_throws FiniteKernels.InvalidAxisError tornado(m, :Occupancy, :nope)
+        @test_throws BayesianNetworks.UnknownVariableError tornado(m, :Nope, :present)
+        @test_throws BayesianNetworks.UnknownStateError tornado(m, :Occupancy, :nope)
     end
 end

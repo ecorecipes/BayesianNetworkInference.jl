@@ -39,7 +39,7 @@
     for value in (-eps(), NaN, Inf)
         invalid = FactorGraph([Factor(a, [value, 1.0]), Factor(c, [0.25, 0.75])];
                               check=false)
-        @test_throws LogFactorDomainError log_calibrate(invalid; evidence=Dict(:A => :high))
+        @test_throws FactorDomainError log_calibrate(invalid; evidence=Dict(:A => :high))
     end
 
     rng = MersenneTwister(20260909)

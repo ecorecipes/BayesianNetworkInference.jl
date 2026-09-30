@@ -14,7 +14,7 @@ With `check = true` (the default) every entry must be finite and at least `-atol
 else [`FactorEntryError`](@ref): the same contract a `FiniteKernel` has (ADR 0007), since
 a factor graph's product is meant to be a measure. The check runs once per graph, not per
 query. Entries in `[-atol, 0)` are tolerated, as rounded tables produce them;
-the log-domain backends still reject them with [`LogFactorDomainError`](@ref), because
+the log-domain backends still reject them with [`FactorDomainError`](@ref), because
 they have no logarithm. `check = false` skips the check, and the inner constructor
 `FactorGraph{T}(factors, provenance)` never runs it: [`compile`](@ref) uses it, because
 the model was already validated at its own `atol`, and so does a caller whose factors are

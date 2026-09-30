@@ -39,9 +39,9 @@ end
 @testset "errors" begin
     @testset "hierarchy" begin
         owned = owned_exception_types(BayesianNetworkInference)
-        # The search is not vacuous: it finds the root and the four concrete types.
+        # The search is not vacuous: it finds the root and the concrete types.
         @test issubset([InferenceError, ScopeError, ShapeError, CompileError,
-                        LogFactorDomainError], owned)
+                        FactorDomainError, FactorEntryError, TraceLimitError], owned)
         for T in owned
             @test T <: InferenceError
             @test parentmodule(T) === BayesianNetworkInference
@@ -61,7 +61,8 @@ end
     @testset "re-exports" begin
         exported = names(BayesianNetworkInference)
         @test issubset([:InferenceError, :ScopeError, :ShapeError, :CompileError,
-                        :LogFactorDomainError], exported)
+                        :FactorDomainError, :FactorEntryError, :TraceLimitError], exported)
+        @test !isdefined(BayesianNetworkInference, :LogFactorDomainError)
         # Drift: every exception type FiniteKernels exports, the root included.
         fk = exported_exception_names(FiniteKernels)
         @test issubset([:FiniteKernelsError, :InvalidAxisError, :KernelShapeError,
@@ -105,16 +106,18 @@ end
         c = FiniteAxis(:C, [:c0, :c1])
         f = Factor(a, [0.3, 0.7])
         fg = FactorGraph([f, Factor([a, c], [0.9 0.1; 0.2 0.8])])
-        # This package's own four types.
+        # This package's own types.
         own = [caught(() -> infer(fg, :Z)),
                caught(() -> Factor([a], rand(3))),
                caught(() -> compile(BayesModel(bayesnet(:A => [:a, :b], :B => [:x, :y];
                                                         mechanisms=[:B => [:A]],
                                                         closed=false)))),
                caught(() -> infer(FactorGraph([Factor(a, [-eps(), 1.0])]), :A;
-                                  backend=LogVariableElimination()))]
+                                  backend=LogVariableElimination())),
+               caught(() -> FactorGraph([Factor(a, [NaN, 1.0])])),
+               caught(() -> trace_variable_elimination(fg, [:C]; max_entries=1))]
         @test map(typeof, own) == [ScopeError, ShapeError, CompileError,
-                                   LogFactorDomainError]
+                                   FactorDomainError, FactorEntryError, TraceLimitError]
         for e in own
             @test e isa InferenceError
             @test e isa BayesNetError
@@ -150,8 +153,10 @@ end
         @test ScopeError(:infer, "m", [:A]) != ScopeError(:infer, "m", [:B])
         @test ShapeError(:f, "m", NaN, 1) == ShapeError(:f, "m", NaN, 1)
         @test CompileError("m", [:X]) == CompileError("m", [:X])
-        @test LogFactorDomainError([:A], (1,), -0.0) !=
-              LogFactorDomainError([:A], (1,), 0.0)
+        @test FactorDomainError(:log_domain, [:A], (1,), -0.0) !=
+              FactorDomainError(:log_domain, [:A], (1,), 0.0)
+        @test TraceLimitError(:t, :cells, "m", [:A]) ==
+              TraceLimitError(:t, :cells, "m", [:A])
         @test length(Set([CompileError("m", [:X]), CompileError("m", [:X])])) == 1
     end
 end
@@ -177,4 +182,45 @@ end
     m = bind_cpt(m, :Y => [1.0+5e-7 -5e-7; 0.4 0.6]; atol=1e-6)
     p, _ = infer(m, :Y; atol=1e-6)
     @test isapprox(sum(p.table), 1.0; atol=1e-9)
+end
+
+@testset "model-level label errors (ADR 0015)" begin
+    bn = bayesnet(:A => [:a, :b], :B => [:x, :y]; mechanisms=[:A => (), :B => (:A,)])
+    m = bind_cpt(BayesModel(bn), [:A => [0.5, 0.5], :B => [0.9 0.1; 0.2 0.8]])
+    fg = compile(m)
+    V, S = BayesianNetworks.UnknownVariableError, BayesianNetworks.UnknownStateError
+    # The model methods raise what BayesianNetworks.marginal raises.
+    @test_throws V marginal(m, :Z)
+    @test_throws S marginal(m, :B; evidence=Dict(:A => :zz))
+    for backend in (VariableElimination(), JunctionTree(), BeliefPropagation(),
+                    LogVariableElimination(), LogJunctionTree())
+        @test_throws V infer(m, :Z; backend)
+        @test_throws V infer(m, :B; evidence=Dict(:Z => :a), backend)
+        @test_throws S infer(m, :B; evidence=Dict(:A => :zz), backend)
+    end
+    @test_throws V posterior(m, :Z)
+    @test_throws S all_marginals(m; evidence=Dict(:A => :zz))
+    @test_throws V all_marginals(m; evidence=Dict(:Z => :a))
+    @test_throws S log_evidence_probability(m; evidence=Dict(:A => :zz))
+    @test_throws V trace_variable_elimination(m, [:Z])
+    @test_throws V entropy(m, :Z)
+    @test_throws V mutual_information(m, :A, :Z)
+    @test_throws V sensitivity(m, :Z)
+    @test_throws V sensitivity(m, :B; variables=[:Z])
+    @test_throws V tornado(m, :Z, :x)
+    @test_throws S tornado(m, :B, :zz)
+    @test_throws V predict(m, [Dict(:A => :a)], :Z)
+    @test_throws V predict(m, [Dict(:A => :a)], :B; evidence_vars=[:Z])
+    @test_throws S predict(m, [Dict(:A => :zz)], :B)
+    @test_throws S evaluate(m, [Dict(:A => :a, :B => :zz)], :B)
+    @test_throws S evaluate(m, [Dict(:A => :a, :B => :x)], :B; state=:zz)
+    # A case may record variables and states that are never entered.
+    @test predict(m, [Dict(:A => :a, :Other => :q)], :B) isa Predictions
+    @test predict(m, [Dict(:A => :zz)], :B; evidence_vars=Symbol[]) isa Predictions
+    # The factor-graph methods keep the factor-level types.
+    @test_throws ScopeError infer(fg, :Z)
+    @test_throws InvalidAxisError infer(fg, :B; evidence=Dict(:A => :zz))
+    @test_throws ScopeError tornado(fg, :Z, :x)
+    @test_throws InvalidAxisError tornado(fg, :B, :zz)
+    @test_throws ScopeError predict(fg, [Dict(:A => :a)], :Z)
 end

@@ -102,7 +102,8 @@ function _resolving_mass(fallback, ordinary, evidence)
     try
         return fallback()
     catch e
-        (e isa LogFactorDomainError && isfinite(e.value) && e.value < 0) || rethrow()
+        (e isa FactorDomainError && e.backend === :log_domain && isfinite(e.value) &&
+         e.value < 0) || rethrow()
         throw(IndeterminatePosteriorError(Dict{Symbol,Symbol}(evidence),
                                           "the binary64 evidence mass is below the normal range and a tolerated negative entry ($(e.value)) has no logarithm"))
     end

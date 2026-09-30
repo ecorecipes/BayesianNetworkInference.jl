@@ -50,7 +50,12 @@ end
                                    backend=BeliefPropagation(; check_evidence=true))).table,
                        [0.9, 0.1]; rtol=1e-10)
         # The trace records binary64 execution and cannot fall back.
-        @test_throws ScopeError trace_variable_elimination(fg, v[340]; evidence=ev)
+        underflow = try
+            trace_variable_elimination(fg, v[340]; evidence=ev)
+        catch e
+            e
+        end
+        @test underflow isa TraceLimitError && underflow.limit === :evidence_underflow
     end
 
     @testset "exact zero is impossible on every backend" begin

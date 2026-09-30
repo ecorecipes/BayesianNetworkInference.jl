@@ -169,6 +169,7 @@ InferenceError
 ScopeError
 ShapeError
 CompileError
-LogFactorDomainError
+FactorDomainError
 FactorEntryError
+TraceLimitError
 ```

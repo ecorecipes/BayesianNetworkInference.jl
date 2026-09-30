@@ -71,7 +71,8 @@ with `BayesianNetworkFormats.jl` (file formats) and `EcologicalBayesianNetworks.
   index splits (with `by` for grouped spatial or temporal holdout), and `evaluate` for the lot in one table.
 - Sensitivity analysis: `entropy`, `mutual_information`, `sensitivity` (Marcot 2012's entropy-reduction
   ranking of every variable against a target) and `tornado` (the range one finding could move an answer).
-- Typed exceptions (`ScopeError`, `ShapeError`, `CompileError` and `LogFactorDomainError` under the root
+- Typed exceptions (`ScopeError`, `ShapeError`, `CompileError`, `FactorEntryError`, `FactorDomainError` and
+  `TraceLimitError` under the root
   `InferenceError <: BayesNetError`, `ImpossibleEvidenceError` from `BayesianNetworks.jl` for evidence of
   probability exactly zero, `IndeterminatePosteriorError` for a posterior left to tolerated rounding, plus `KernelNormalizationError` / `InvalidAxisError` from `FiniteKernels.jl`)
   carrying the offending variable names or evidence; the re-exported `AnyBayesNetError` catches them all.
@@ -156,7 +157,7 @@ all_posteriors = all_marginals(m; backend=LogJunctionTree())
 The backend returns Float64 posterior cells. A posterior cell that is itself
 unrepresentably small can still underflow; this is not a universal error bound.
 Empty queries retain the ordinary unnormalized-mass API, with the log mass in
-the diagnostics. Negative or nonfinite factor entries raise `LogFactorDomainError`.
+the diagnostics. Negative or nonfinite factor entries raise `FactorDomainError`.
 
 Factor level, building the factors by hand:
 

@@ -39,18 +39,18 @@
 
     # A non-finite entry is rejected when the graph is built (FactorEntryError); a
     # tolerated negative one (within -atol) builds, and the log domain, which has no
-    # logarithm for it, rejects it with LogFactorDomainError.
+    # logarithm for it, rejects it with FactorDomainError (ADR 0015).
     for value in (Inf, NaN)
         @test_throws FactorEntryError FactorGraph([Factor(a, [value, 1.0])])
     end
     for value in (-eps(), Inf, NaN)
         graph = FactorGraph([Factor(a, [value, 1.0])]; check=false)
-        @test_throws LogFactorDomainError infer(graph, :A; backend=LogVariableElimination())
-        @test_throws LogFactorDomainError log_evidence_probability(graph;
-                                                                   evidence=Dict(:A => :usual))
+        @test_throws FactorDomainError infer(graph, :A; backend=LogVariableElimination())
+        @test_throws FactorDomainError log_evidence_probability(graph;
+                                                                evidence=Dict(:A => :usual))
     end
     tolerated = FactorGraph([Factor(a, [-eps(), 1.0])])
-    @test_throws LogFactorDomainError infer(tolerated, :A; backend=LogVariableElimination())
+    @test_throws FactorDomainError infer(tolerated, :A; backend=LogVariableElimination())
     huge = FactorGraph([Factor(a, [1e300, 1e300]), Factor(a, [1e300, 1e300])])
     huge_posterior, huge_info = infer(huge, :A; backend=LogVariableElimination())
     @test huge_posterior.table == [0.5, 0.5]

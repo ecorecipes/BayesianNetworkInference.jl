@@ -137,10 +137,17 @@ range a single finding could move the answer.
 
 All failures are typed exceptions carrying the offending names. The
 package's own, [`ScopeError`](@ref), [`ShapeError`](@ref),
-[`CompileError`](@ref) (a model that is open or lacks kernels) and
-[`LogFactorDomainError`](@ref) (a factor entry the log domain cannot take),
-subtype [`InferenceError`](@ref), which subtypes `BayesianNetworks`'
-`BayesNetError` (ADR 0013). `FiniteKernels`' `KernelNormalizationError`
+[`CompileError`](@ref) (a model that is open or lacks kernels),
+[`FactorEntryError`](@ref) (a factor graph entry that is not finite or is below
+`-atol`), [`FactorDomainError`](@ref) (a valid entry that a backend's arithmetic
+cannot take, such as a tolerated negative entry in the log domain) and
+[`TraceLimitError`](@ref) (a run that an execution trace cannot record: a cell
+budget, a Float64-only profile, an underflowed evidence mass) subtype [`InferenceError`](@ref), which subtypes `BayesianNetworks`'
+`BayesNetError` (ADR 0013). A name the model does not have is reported by the layer
+that named it (ADR 0015): the methods on a `BayesModel` raise `BayesianNetworks`'
+`UnknownVariableError` and `UnknownStateError`, as `BayesianNetworks.marginal` does,
+while the methods on a [`FactorGraph`](@ref) raise `ScopeError` and `FiniteKernels`'
+`InvalidAxisError`. `FiniteKernels`' `KernelNormalizationError`
 (kernel columns that do not sum to one) and `InvalidAxisError`, and the
 exceptions of `BayesianNetworks.validate`, pass through unchanged; the
 re-exported `AnyBayesNetError` catches every one of them. Invalid arguments
