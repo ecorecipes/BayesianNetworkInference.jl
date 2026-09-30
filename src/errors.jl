@@ -134,7 +134,10 @@ otherwise), but this backend needs more:
   nonnegative inputs;
 - `:stable_decision_elimination` (InfluenceDiagrams' exact decision elimination) needs
   finite, nonnegative probabilities, since exact arithmetic does not accept tolerated
-  negative entries.
+  negative entries;
+- `:exact` (the exact fallback of every posterior entry point, ADR 0016) needs entries that
+  are exactly Float64 values, so a non-finite entry of a graph built with `check = false`,
+  or a wider type, is rejected.
 
 `vars` is the factor's scope, `index` the entry's position in its table and `value` the
 entry. Small negative values are rejected, not clamped to zero. It replaces

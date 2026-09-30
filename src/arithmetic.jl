@@ -179,3 +179,85 @@ function _collect_marginals(marginal, fg::FactorGraph, evidence, ::Type{R}) wher
     end
     return out
 end
+
+# Exact dyadic factors (ADR 0016)
+# -------------------------------
+
+# The arithmetic of the fallbacks (ADR 0014): an exact factor is an integer table times one
+# power of two, `factor.table .* 2^exponent`, so products multiply integers and add
+# exponents, sums add integers, and nothing is rounded until `_normalized` divides each cell
+# by the total and rounds it once, to the Float64 nearest the exact posterior of the graph as
+# bound. `_dyadic` and `_nearest_binary64` are BayesianNetworks' (exact_rounding.jl), shared
+# with its brute-force fallback and InfluenceDiagrams' exact decision elimination.
+struct _Dyadic <: _Arithmetic end
+
+struct _DyadicFactor
+    factor::Factor{BigInt}
+    exponent::Int
+end
+
+_plain(f::_DyadicFactor) = f.factor
+_factor_type(::_Dyadic, ::Type) = _DyadicFactor
+
+# The exact value of every entry. The fallback runs only when the binary64 evidence mass is
+# not a normal positive number, so a tolerated negative entry cannot be shown small beside
+# the mass and leaves the posterior's sign to the rounding (ADR 0014). An entry that is not
+# exactly a Float64 (a non-finite value, or a wider type) has no exact dyadic value here.
+function _as_dyadic(f::Factor, evidence)
+    entries = Array{Tuple{BigInt,Int}}(undef, size(f))
+    for index in CartesianIndices(f.table)
+        x = f.table[index]
+        isfinite(x) && Float64(x) == x ||
+            throw(FactorDomainError(:exact, copy(f.vars), Tuple(index), x))
+        x < 0 &&
+            throw(IndeterminatePosteriorError(Dict{Symbol,Symbol}(evidence),
+                                              "the binary64 evidence mass is not a normal positive number, and a tolerated negative entry ($(x)) leaves the sign of so small a posterior to the rounding"))
+        entries[index] = BayesianNetworks._dyadic(Float64(x))
+    end
+    exponent = minimum(last, entries; init=0)
+    table = map(((n, p),) -> n << (p - exponent), entries)
+    return _DyadicFactor(_factor(f.vars, f.axes, table), exponent)
+end
+
+function _conditioned(::_Dyadic, f::Factor, evidence)
+    exact = _as_dyadic(f, evidence)
+    return _DyadicFactor(condition(exact.factor, evidence), exact.exponent)
+end
+
+function _unit(::_Dyadic, ::Type=Float64)
+    return _DyadicFactor(_factor(Symbol[], FiniteAxis[], fill(big(1))), 0)
+end
+
+function _product!(A::_Dyadic, fs::Vector{_DyadicFactor})
+    isempty(fs) && return _unit(A)
+    sort!(fs; by=f -> ndims(f.factor))
+    return reduce((a, b) -> _multiply(A, a, b), fs)
+end
+
+function _multiply(::_Dyadic, a::_DyadicFactor, b::_DyadicFactor)
+    return _DyadicFactor(multiply(a.factor, b.factor), a.exponent + b.exponent)
+end
+
+function _sum_out(::_Dyadic, f::_DyadicFactor, v::Symbol)
+    return _DyadicFactor(marginalize(f.factor, v), f.exponent)
+end
+
+function _project(::_Dyadic, f::_DyadicFactor, keep::Vector{Symbol})
+    return _DyadicFactor(marginalize(f.factor, setdiff(f.factor.vars, keep)), f.exponent)
+end
+
+function _reorder(::_Dyadic, f::_DyadicFactor, query)
+    return _DyadicFactor(reorder(f.factor, query), f.exponent)
+end
+
+# Whether the exact mass of `f` is zero: the evidence has probability exactly zero.
+_exactly_zero(f::_DyadicFactor) = iszero(sum(f.factor.table; init=big(0)))
+
+# Each cell the Float64 nearest its exact share of the total (correct rounding). The inputs
+# are nonnegative (`_as_dyadic`), so only an exact zero total is impossible evidence.
+function _normalized(::_Dyadic, f::_DyadicFactor, evidence)
+    total = sum(f.factor.table; init=big(0))
+    iszero(total) && _impossible(evidence)
+    return _factor(f.factor.vars, f.factor.axes,
+                   map(t -> BayesianNetworks._nearest_binary64(t, total), f.factor.table))
+end

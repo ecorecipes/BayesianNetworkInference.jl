@@ -95,8 +95,9 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   needs `import AMD`), `ExactTreewidth` (`BT`, needs `import TreeWidthSolver`; run per connected component because BT
   fails on isolated vertices), `UserOrder`; `elimination_order(fg, strategy; keep)` via
   `permutation(graph; alg=CompositeRotations(keep_idx, alg))`, `treewidth(fg, strategy)`.
-- `src/arithmetic.jl` (review item 8, S3): the two arithmetics the exact drivers are written against,
-  `_Linear` (a `Factor`) and `_LogDomain` (a `_LogFactor`: centred log table plus log scale), with the
+- `src/arithmetic.jl` (review item 8, S3): the arithmetics the exact drivers are written against,
+  `_Linear` (a `Factor`), `_LogDomain` (a `_LogFactor`: centred log table plus log scale) and `_Dyadic`
+  (a `_DyadicFactor`: integer table times a power of two, the exact fallback, ADR 0016), with the
   operations `_conditioned`, `_product!`, `_multiply`, `_sum_out`, `_project`, `_reorder`, `_unit` and
   `_normalized`, the log primitives (`_as_log_factor`, `_log_multiply`, `_log_sum_out`, `_log_mass`,
   `_log_mass_status`) and `_collect_marginals` (point masses for observed variables). The drivers are
@@ -186,11 +187,15 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   06 inference in the log domain (a 340-site chain whose evidence mass underflows: the default backends fall
   back to the log domain and return the closed-form posterior, `log_evidence_probability` separates rare
   from impossible, and tolerated negative entries give `IndeterminatePosteriorError`; ADR 0014).
-- Evidence mass (ADR 0014): `_require_evidence_mass` never decides impossibility for a binary64 mass that is
-  not a normal positive number; it throws the internal `_UnresolvedMass` signal, which every public entry
-  point resolves with `_resolving_mass` by recomputing in the log domain. Only the log domain (log mass
-  `-Inf`, via `_impossible`) raises `ImpossibleEvidenceError`. A new entry point that normalises a
-  posterior must go through `_resolving_mass`, or the signal escapes.
+- Evidence mass (ADR 0014, ADR 0016): `_require_evidence_mass` never decides impossibility for a binary64
+  mass that is not a normal positive number; it throws the internal `_UnresolvedMass` signal, which every
+  public entry point resolves with `_resolving_mass` by recomputing in exact dyadic arithmetic (`_Dyadic`,
+  arithmetic.jl: the shared drivers on integer tables times a power of two) and rounding each posterior
+  cell once with BayesianNetworks' `_nearest_binary64`. Only that exact computation (`_exactly_zero`,
+  `_exactly_impossible`) raises `ImpossibleEvidenceError`; a tolerated negative entry met by it is
+  `IndeterminatePosteriorError`. The diagnostics flag is `exact_fallback` (it was `log_fallback`). A new
+  entry point that normalises a posterior must go through `_resolving_mass`, or the signal escapes. The
+  explicit log backends are not a fallback and are not correctly rounded.
 - Later milestones: `ext/` adapters for external backends.
 
 ## Formal correspondence

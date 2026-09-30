@@ -58,8 +58,9 @@ with `BayesianNetworkFormats.jl` (file formats) and `EcologicalBayesianNetworks.
   all-observed shortcuts. Evidence of probability exactly zero raises `ImpossibleEvidenceError`, the
   error `BayesianNetworks.marginal` raises (re-exported here), from every backend and everything
   built on them (ADR 0012). A binary64 mass that is zero, subnormal or non-finite does not decide
-  that, since a positive probability can underflow: the query is then recomputed in the log domain
-  and answered, and the diagnostics' `log_fallback` says so (ADR 0014). Tolerated negative entries
+  that, since a positive probability can underflow: the query is then recomputed in exact arithmetic
+  and answered, each cell the Float64 nearest the exact posterior, and the diagnostics'
+  `exact_fallback` says so (ADR 0014, ADR 0016). Tolerated negative entries
   that leave a posterior's sign to rounding raise `IndeterminatePosteriorError`. An empty `infer`
   query still returns unnormalized evidence mass, which may legitimately be zero. Integer factors
   promote to division-compatible posterior types.

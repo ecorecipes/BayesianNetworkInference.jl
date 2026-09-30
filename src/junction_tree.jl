@@ -342,7 +342,9 @@ cliques, the width of the decomposition, the number of entries of the largest
 clique belief (of the largest intermediate factor when `fallback` is true),
 the number of separator messages passed (`0` when `fallback` is true), and
 whether the query was answered by the variable-elimination fallback because
-no single clique contained it.
+no single clique contained it. `exact_fallback` is true when the binary64 evidence mass
+was not a normal positive number and the tree was recalibrated in exact arithmetic,
+each posterior cell correctly rounded (ADR 0014, ADR 0016).
 
 [`infer`](@ref) with the [`JunctionTree`](@ref) backend always returns this
 type, so the diagnostics of a query that falls back can be told from the
@@ -355,7 +357,7 @@ struct JunctionTreeDiagnostics
     max_clique_size::Int
     n_messages::Int
     fallback::Bool
-    log_fallback::Bool
+    exact_fallback::Bool
 end
 function JunctionTreeDiagnostics(clique::Integer, n_cliques::Integer, treewidth::Integer,
                                  max_clique_size::Integer, n_messages::Integer,
@@ -398,10 +400,42 @@ function _infer(backend::JunctionTree, fg::FactorGraph, query, evidence)
     isempty(query) && return _infer_binary64(backend, fg, query, evidence)
     return _resolving_mass(() -> _infer_binary64(backend, fg, query, evidence),
                            evidence) do
-        f, d = _infer(LogJunctionTree(; order=backend.order), fg, query, evidence)
+        return _exact_junction_tree_query(backend, fg, query, evidence)
+    end
+end
+
+# The exact fallback of the junction tree (ADR 0014, ADR 0016): the shared calibration in
+# exact dyadic arithmetic, with the global mass decided exactly (the constant and every
+# component root) and each posterior cell correctly rounded.
+function _exact_calibration(fg::FactorGraph, jt::CompiledJunctionTree, evidence)
+    _, _, constant, beliefs, n_messages = _calibrate(_Dyadic(), fg, jt, evidence,
+                                                     :calibrate)
+    (_exactly_zero(constant) || any(r -> _exactly_zero(beliefs[r]), jt.roots)) &&
+        _impossible(evidence)
+    return beliefs, n_messages
+end
+
+function _exact_junction_tree_query(backend::JunctionTree, fg::FactorGraph, query, evidence)
+    jt = build_junction_tree(fg; order=backend.order)
+    c = _containing_clique(jt, fg.axes, query)
+    if c === nothing
+        f, ve = _exact_variable_elimination(fg, query, evidence, backend.order)
         return f,
-               JunctionTreeDiagnostics(d.clique, d.n_cliques, d.treewidth,
-                                       d.max_clique_size, d.n_messages, d.fallback, true)
+               JunctionTreeDiagnostics(0, length(jt), jt.treewidth, ve.max_factor_size, 0,
+                                       true, true)
+    end
+    beliefs, n_messages = _exact_calibration(fg, jt, evidence)
+    largest = maximum(b -> length(b.factor), beliefs; init=0)
+    return _belief_marginal(_Dyadic(), beliefs[c], query, evidence),
+           JunctionTreeDiagnostics(c, length(jt), jt.treewidth, largest, n_messages, false,
+                                   true)
+end
+
+function _exact_all_marginals(order::EliminationStrategy, fg::FactorGraph, evidence)
+    jt = build_junction_tree(fg; order)
+    beliefs, _ = _exact_calibration(fg, jt, evidence)
+    return _collect_marginals(fg, evidence, Float64) do v
+        return _belief_marginal(_Dyadic(), beliefs[jt.home[v]], [v], evidence)
     end
 end
 
@@ -435,8 +469,8 @@ The posterior `P(clique | evidence)` of every clique of the junction tree of
 `fg` (in the order of `build_junction_tree(fg; order=backend.order).cliques`),
 as normalised factors whose scopes are the cliques minus the evidence
 variables. Throws `BayesianNetworks.ImpossibleEvidenceError` if the evidence
-has probability exactly zero; a binary64 mass that underflowed is recomputed by the
-log-domain junction tree (ADR 0014).
+has probability exactly zero; a binary64 mass that underflowed is recomputed in exact
+arithmetic and each belief correctly rounded (ADR 0014, ADR 0016).
 """
 function clique_beliefs(fg::FactorGraph;
                         evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
@@ -451,7 +485,9 @@ function _clique_beliefs(backend::JunctionTree, fg::FactorGraph, evidence)
         return [_normalized(_Linear(), belief, evidence) for belief in cal.beliefs]
     end
     return _resolving_mass(ordinary, evidence) do
-        return _clique_beliefs(LogJunctionTree(; order=backend.order), fg, evidence)
+        beliefs, _ = _exact_calibration(fg, build_junction_tree(fg; order=backend.order),
+                                        evidence)
+        return [_normalized(_Dyadic(), belief, evidence) for belief in beliefs]
     end
 end
 
@@ -479,7 +515,7 @@ end
 function _all_marginals(backend::JunctionTree, fg::FactorGraph, evidence)
     return _resolving_mass(() -> _all_marginals_binary64(backend, fg, evidence),
                            evidence) do
-        return _all_marginals(LogJunctionTree(; order=backend.order), fg, evidence)
+        return _exact_all_marginals(backend.order, fg, evidence)
     end
 end
 
@@ -498,8 +534,7 @@ function _all_marginals(backend::VariableElimination, fg::FactorGraph{T},
     if all(v -> haskey(evidence, v), keys(fg.axes))
         mass = variable_elimination(fg, Symbol[]; evidence, order=backend.order)[1].table[]
         _resolving_mass(() -> _require_evidence_mass(mass, evidence), evidence) do
-            log_evidence_probability(fg; evidence, order=backend.order) == -Inf &&
-                _impossible(evidence)
+            _exactly_impossible(fg, evidence, backend.order) && _impossible(evidence)
             return nothing
         end
     end

@@ -61,9 +61,10 @@ point of the message equations gives exact marginals for feasible evidence.
 `evidence_checked` is true, that status is unknown.
 
 `exact_fallback` is true when a message or belief summed to zero although the exact
-log-domain evidence mass was positive -- local support is not a complete feasibility test
-on a graph with loops, and a message can underflow -- and the marginals were therefore
-computed by the exact log-domain junction tree instead (ADR 0014). `iterations`,
+evidence mass was positive -- local support is not a complete feasibility test on a graph
+with loops, and a message can underflow -- and the marginals were therefore computed by
+the junction tree in exact arithmetic instead, each cell correctly rounded (ADR 0014,
+ADR 0016). `iterations`,
 `converged` and `max_residual` then describe no BP run (0, `true`, 0.0).
 """
 struct BPDiagnostics
@@ -132,9 +133,9 @@ end
 # Normalise a message in place. A message whose sum is zero or below the normal range does
 # not prove the evidence impossible: on a graph with loops local support is not a complete
 # feasibility test, and a message can underflow. `_require_evidence_mass` therefore signals
-# it, and `belief_propagation` resolves the signal with the exact log-domain evidence mass
-# (ADR 0014): `ImpossibleEvidenceError` for an exact zero, otherwise the exact log-domain
-# junction tree answers.
+# it, and `belief_propagation` resolves the signal with the exact evidence mass (ADR 0014,
+# ADR 0016): `ImpossibleEvidenceError` for an exact zero, otherwise the junction tree in
+# exact arithmetic answers.
 function _normalize!(m::Vector, evidence)
     s = sum(m)
     _require_evidence_mass(s, evidence)
@@ -267,7 +268,7 @@ function belief_propagation(fg::FactorGraph{T},
     if backend.check_evidence
         mass = variable_elimination(fg, Symbol[]; evidence=ev)[1].table[]
         _resolving_mass(() -> _require_evidence_mass(mass, ev), ev) do
-            log_evidence_probability(fg; evidence=ev) == -Inf && _impossible(ev)
+            _exactly_impossible(fg, ev) && _impossible(ev)
             return nothing
         end
     end
@@ -289,8 +290,7 @@ function belief_propagation(fg::FactorGraph{T},
         end
     end
     return _resolving_mass(() -> _run_bp(fg, backend, factors, ev), ev) do
-        log_evidence_probability(fg; evidence=ev) == -Inf && _impossible(ev)
-        marginals = _all_marginals(LogJunctionTree(), fg, ev)
+        marginals = _exact_all_marginals(MinFill(), fg, ev)
         return Dict{Symbol,Factor{R}}(v => _convert_factor(R, f) for (v, f) in marginals),
                BPDiagnostics(0, true, 0.0, _is_forest(factors), backend.check_evidence,
                              true)

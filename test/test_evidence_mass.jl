@@ -22,6 +22,45 @@ function caught_mass_error(f)
     return nothing
 end
 
+@testset "the fallback is correctly rounded (ADR 0016)" begin
+    # Two independent observations of probability 1e-200: the binary64 mass is zero, and
+    # every exact backend falls back to exact arithmetic. The reference is the exact
+    # posterior of the graph as bound, rounded once.
+    nearest = BayesianNetworks._nearest_binary64
+    exact(x) = Rational{BigInt}(x)
+    a = FiniteAxis(:A, [:rare, :usual])
+    b = FiniteAxis(:B, [:rare, :usual])
+    c = FiniteAxis(:C, [:c0, :c1])
+    fg = FactorGraph([Factor(a, [1e-200, 1.0]), Factor(b, [1e-200, 1.0]),
+                      Factor([a, c], [0.1 0.9; 0.5 0.5])])
+    ev = Dict(:A => :rare, :B => :rare)
+    w = [exact(1e-200) * exact(1e-200) * exact(0.1),
+         exact(1e-200) * exact(1e-200) * exact(0.9)]
+    want = [nearest(w[1] / sum(w)), nearest(w[2] / sum(w))]
+    for backend in (VariableElimination(), JunctionTree())
+        p, d = infer(fg, :C; evidence=ev, backend)
+        @test p.table == want
+        @test d.exact_fallback
+    end
+    # Belief propagation normalises every message, so on this tree nothing underflows and
+    # it needs no fallback.
+    @test first(infer(fg, :C; evidence=ev, backend=BeliefPropagation())).table == want
+    @test brute_force_marginal(fg, :C; evidence=ev).table == want
+    @test all_marginals(fg; evidence=ev)[:C].table == want
+    @test all_marginals(fg; evidence=ev, backend=VariableElimination())[:C].table == want
+    beliefs = clique_beliefs(fg; evidence=ev)
+    @test any(bf -> bf.vars == [:C] && bf.table == want, beliefs)
+    # A posterior that depends on the rare numbers themselves.
+    x = FiniteAxis(:X, [:x0, :x1])
+    y = FiniteAxis(:Y, [:n, :y])
+    fx = FactorGraph([Factor(x, [0.3, 0.7]),
+                      Factor([x, y], [1-1e-200 1e-200; 1-3e-200 3e-200]),
+                      Factor(b, [1e-200, 1.0])])
+    wx = [exact(0.3) * exact(1e-200), exact(0.7) * exact(3e-200)]
+    @test first(infer(fx, :X; evidence=Dict(:Y => :y, :B => :rare))).table ==
+          [nearest(wx[1] / sum(wx)), nearest(wx[2] / sum(wx))]
+end
+
 @testset "evidence mass (ADR 0014)" begin
     @testset "rare evidence is answered on every exact backend" begin
         # The closed form: conditioning on the previous site leaves [0.9, 0.1].
@@ -31,7 +70,10 @@ end
             for backend in (VariableElimination(), JunctionTree())
                 p, d = infer(m, v[n]; evidence=ev, backend)
                 @test isapprox(p.table, [0.9, 0.1]; rtol=1e-10)
-                @test d.log_fallback == fallback
+                @test d.exact_fallback == fallback
+                # Float64(0.9) + Float64(0.1) is 1 + 2^-55; the exact posterior rounds back
+                # to the row itself, which the exact fallback returns bit for bit.
+                fallback && @test p.table == [0.9, 0.1]
             end
             @test isapprox(first(infer(m, v[n]; evidence=ev,
                                        backend=BeliefPropagation())).table,

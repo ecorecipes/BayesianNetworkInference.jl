@@ -209,15 +209,15 @@ end
     end
 
     # An overflowed raw product (1e300 * 1e300 * 0) has a NaN binary64 mass. The empty
-    # query still reports that mass, but a posterior is recomputed in the log domain, where
-    # 1e600 is representable, and is exact (ADR 0014; ADR 0012 left it NaN).
+    # query still reports that mass, but a posterior is recomputed in exact arithmetic,
+    # where 1e600 is representable, and is exact (ADR 0014, ADR 0016; ADR 0012 left it NaN).
     overflow = FactorGraph([Factor(x, [1e300, 1e300]), Factor(x, [1e300, 1e300]),
                             Factor(x, [0.0, 1.0])])
     for backend in (VariableElimination(), JunctionTree())
         @test isnan(first(infer(overflow, Symbol[]; backend)).table[])
         p, d = infer(overflow, :X; backend)
         @test p.table == [0.0, 1.0]
-        @test d.log_fallback
+        @test d.exact_fallback
     end
     @test brute_force_marginal(overflow, :X).table == [0.0, 1.0]
 end

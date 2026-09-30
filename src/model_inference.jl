@@ -81,7 +81,7 @@ does; ADR 0015), [`ScopeError`](@ref) for a repeated query variable or a query
 variable that also carries evidence, and `BayesianNetworks.ImpossibleEvidenceError` for a
 non-empty query when the evidence has probability exactly zero, as
 `BayesianNetworks.marginal` does. Evidence whose binary64 mass underflows is
-answered by the log-domain fallback (ADR 0014). When the model holds tolerated
+answered by the exact fallback, each cell correctly rounded (ADR 0014, ADR 0016). When the model holds tolerated
 entries in `[-atol, 0)` and the evidence mass is within the tolerance budget
 `(1 + atol)^n - 1` of zero, `BayesianNetworks.IndeterminatePosteriorError` is raised.
 

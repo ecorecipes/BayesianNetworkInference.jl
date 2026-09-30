@@ -25,14 +25,16 @@ What a run of [`variable_elimination`](@ref) did: the elimination `order`
 used, the number of entries of the largest intermediate factor, the number of
 pairwise factor products, and the width of the elimination order (largest
 intermediate scope minus one, which equals the treewidth of the order on the
-interaction graph of the conditioned factors).
+interaction graph of the conditioned factors). `exact_fallback` is true when the
+binary64 evidence mass was not a normal positive number and the posterior was
+recomputed in exact arithmetic and correctly rounded (ADR 0014, ADR 0016).
 """
 struct InferenceDiagnostics
     order::Vector{Symbol}
     max_factor_size::Int
     n_multiplications::Int
     treewidth::Int
-    log_fallback::Bool
+    exact_fallback::Bool
 end
 function InferenceDiagnostics(order::AbstractVector{Symbol}, max_factor_size::Integer,
                               n_multiplications::Integer, treewidth::Integer)
@@ -58,10 +60,11 @@ end
 # Evidence mass (ADR 0012, ADR 0014). A binary64 mass is trusted only when it is a normal
 # positive number. Zero, a subnormal, a negative or a non-finite mass does not say whether
 # the evidence is impossible -- a positive probability that underflowed is zero too -- so
-# the binary64 path throws the internal `_UnresolvedMass` signal (src/errors.jl) instead of deciding. Every
-# public entry point catches it (`_resolving_mass`) and recomputes in the log domain, where
-# only an exact zero gives `-Inf` and so `ImpossibleEvidenceError`. Exact element types
-# (integers, rationals) decide directly.
+# the binary64 path throws the internal `_UnresolvedMass` signal (src/errors.jl) instead of
+# deciding. Every public entry point catches it (`_resolving_mass`) and recomputes in exact
+# dyadic arithmetic (arithmetic.jl, ADR 0016), where only an exact zero is zero and so
+# `ImpossibleEvidenceError`, and each posterior cell is rounded once to the nearest Float64.
+# Exact element types (integers, rationals) decide directly.
 
 _impossible(evidence) = throw(ImpossibleEvidenceError(Dict{Symbol,Symbol}(evidence)))
 
@@ -89,24 +92,31 @@ function _posterior_normalize(f::Factor, evidence)
     return p
 end
 
-# Run `ordinary`; if its binary64 mass was not trustworthy, run `fallback` (a log-domain
-# computation of the same answer) instead. A tolerated negative entry is outside the log
-# domain, and with a mass that small the posterior is indeterminate. Called with a `do`
-# block, which Julia passes first: `_resolving_mass(() -> ordinary, evidence) do ... end`.
+# Run `ordinary`; if its binary64 mass was not trustworthy, run `fallback` (an exact
+# computation of the same answer) instead. Called with a `do` block, which Julia passes
+# first: `_resolving_mass(() -> ordinary, evidence) do ... end`.
 function _resolving_mass(fallback, ordinary, evidence)
     try
         return ordinary()
     catch e
         e isa _UnresolvedMass || rethrow()
     end
-    try
-        return fallback()
-    catch e
-        (e isa FactorDomainError && e.backend === :log_domain && isfinite(e.value) &&
-         e.value < 0) || rethrow()
-        throw(IndeterminatePosteriorError(Dict{Symbol,Symbol}(evidence),
-                                          "the binary64 evidence mass is below the normal range and a tolerated negative entry ($(e.value)) has no logarithm"))
-    end
+    return fallback()
+end
+
+# The fallback of variable elimination (ADR 0014, ADR 0016): the shared driver in exact
+# dyadic arithmetic, each posterior cell correctly rounded.
+function _exact_variable_elimination(fg::FactorGraph, query, evidence, order)
+    result, elim, max_size, n_mult, width = _eliminate(_Dyadic(), fg, query, evidence,
+                                                       order)
+    return _normalized(_Dyadic(), result, evidence),
+           InferenceDiagnostics(elim, max_size, n_mult, width, true)
+end
+
+# Whether the evidence has probability exactly zero, decided exactly.
+function _exactly_impossible(fg::FactorGraph, evidence,
+                             order::EliminationStrategy=MinFill())
+    return _exactly_zero(first(_eliminate(_Dyadic(), fg, Symbol[], evidence, order)))
 end
 
 # Strategy restricted to the variables that survive conditioning.
@@ -136,10 +146,11 @@ evidence variables, or a query variable that also carries evidence, and
 `BayesianNetworks.ImpossibleEvidenceError` for a non-empty `query` when the
 evidence has probability exactly zero. A binary64 mass that is zero, subnormal or
 non-finite does not decide that -- a positive probability can underflow -- so the
-posterior is then recomputed by [`log_variable_elimination`](@ref) and returned, with
-`diagnostics.log_fallback == true` (ADR 0014). A model with tolerated entries in
-`[-atol, 0)` raises `BayesianNetworks.IndeterminatePosteriorError` when a posterior cell
-comes out negative or the log domain meets such an entry.
+posterior is then recomputed in exact arithmetic, each cell rounded once to the Float64
+nearest the exact posterior of the graph as bound, and returned with
+`diagnostics.exact_fallback == true` (ADR 0014, ADR 0016). A model with tolerated entries
+in `[-atol, 0)` raises `BayesianNetworks.IndeterminatePosteriorError` when a posterior cell
+comes out negative, or when the exact fallback is needed.
 """
 function variable_elimination(fg::FactorGraph{T}, query::AbstractVector{Symbol};
                               evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
@@ -147,10 +158,7 @@ function variable_elimination(fg::FactorGraph{T}, query::AbstractVector{Symbol};
     isempty(query) && return _variable_elimination(fg, query, evidence, order, nothing)
     return _resolving_mass(() -> _variable_elimination(fg, query, evidence, order, nothing),
                            evidence) do
-        f, d = log_variable_elimination(fg, query; evidence, order)
-        return f,
-               InferenceDiagnostics(d.order, d.max_factor_size, d.n_multiplications,
-                                    d.treewidth, true)
+        return _exact_variable_elimination(fg, query, evidence, order)
     end
 end
 
@@ -307,7 +315,7 @@ function brute_force_marginal(fg::FactorGraph, query::AbstractVector{Symbol};
     m = reorder(marginalize(j, setdiff(j.vars, query)), query)
     isempty(query) && return m
     return _resolving_mass(() -> _posterior_normalize(m, evidence), evidence) do
-        return first(log_variable_elimination(fg, query; evidence))
+        return first(_exact_variable_elimination(fg, query, evidence, MinFill()))
     end
 end
 function brute_force_marginal(fg::FactorGraph, query::Symbol; kwargs...)

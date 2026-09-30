@@ -174,11 +174,12 @@ end
 Evidence that is merely rare is answered, not rejected (ADR 0014). A mass that is
 zero, subnormal or non-finite in binary64 does not decide impossibility, so
 variable elimination, the junction tree, brute force and belief propagation
-recompute such a query with [`LogVariableElimination`](@ref) or
-[`LogJunctionTree`](@ref) and return that answer; the diagnostics' `log_fallback`
-(or `exact_fallback` for belief propagation) records it. Only the log domain, where
-[`log_evidence_probability`](@ref) is `-Inf` exactly for impossible evidence, may
-raise `ImpossibleEvidenceError`. A model with tolerated entries in `[-atol, 0)` can
+recompute such a query in exact arithmetic and return it with each cell correctly
+rounded: the Float64 nearest the exact posterior of the graph as bound (ADR 0016). The
+diagnostics' `exact_fallback` records it. Only that exact computation may raise
+`ImpossibleEvidenceError`, and only for evidence of probability exactly zero. The
+opt-in [`LogVariableElimination`](@ref) and [`LogJunctionTree`](@ref) backends remain
+fast log-domain numerical backends, not correctly rounded. A model with tolerated entries in `[-atol, 0)` can
 leave a posterior's sign to the rounding; that raises `BayesianNetworks`'
 `IndeterminatePosteriorError` instead of returning a negative probability. An empty
 query never raises: it returns the unnormalised mass, which may be zero.
