@@ -38,10 +38,11 @@ This vignette covers the log-domain layer, which addresses both:
 - `LogInferenceDiagnostics.mass_status` reports `:finite`, `:underflow`
   or `:zero`, so a run says which situation it was in.
 
-The default backends use this layer as a fallback: when the Float64
-evidence mass is not a normal positive number, they recompute the answer
-in the log domain rather than trust it (ADR 0014). The last section is
-explicit about what the layer does *not* promise.
+The default backends do not use this layer themselves. When their
+Float64 evidence mass is not a normal positive number, they recompute
+the answer in exact arithmetic and round each cell once (ADR 0014, ADR
+0016). The log domain is the fast opt-in alternative, and the last
+section is explicit about what it does *not* promise.
 
 ## Setup
 
@@ -107,7 +108,7 @@ function compare(n)
     q, info = infer(mm, vv[n]; evidence = ev)
     p, d = infer(mm, vv[n]; evidence = ev, backend = LogVariableElimination())
     return (n = n, default = round.(q.table; digits = 4),
-            route = info.log_fallback ? :log_fallback : :float64,
+            route = info.exact_fallback ? :exact_fallback : :float64,
             log_domain = round.(p.table; digits = 4),
             log_mass = round(d.log_evidence_probability; digits = 1),
             status = d.mass_status)
@@ -118,9 +119,9 @@ end
 
     4-element Vector{@NamedTuple{n::Int64, default::Vector{Float64}, route::Symbol, log_domain::Vector{Float64}, log_mass::Float64, status::Symbol}}:
      (n = 300, default = [0.9, 0.1], route = :float64, log_domain = [0.9, 0.1], log_mass = -693.1, status = :finite)
-     (n = 320, default = [0.9, 0.1], route = :log_fallback, log_domain = [0.9, 0.1], log_mass = -739.1, status = :finite)
-     (n = 340, default = [0.9, 0.1], route = :log_fallback, log_domain = [0.9, 0.1], log_mass = -785.2, status = :underflow)
-     (n = 400, default = [0.9, 0.1], route = :log_fallback, log_domain = [0.9, 0.1], log_mass = -923.3, status = :underflow)
+     (n = 320, default = [0.9, 0.1], route = :exact_fallback, log_domain = [0.9, 0.1], log_mass = -739.1, status = :finite)
+     (n = 340, default = [0.9, 0.1], route = :exact_fallback, log_domain = [0.9, 0.1], log_mass = -785.2, status = :underflow)
+     (n = 400, default = [0.9, 0.1], route = :exact_fallback, log_domain = [0.9, 0.1], log_mass = -923.3, status = :underflow)
 
 At 300 sites the mass is an ordinary Float64 and the default backend
 answers directly. At 320 the mass is subnormal: it is not zero (so
@@ -129,8 +130,8 @@ and a posterior normalised by it would be wrong in the fourth decimal,
 `[0.901, 0.099]`. At 340 it underflows to zero, which Float64 cannot
 tell apart from a contradiction. The default backend trusts a mass only
 when it is a normal positive number; in the other two regimes it reruns
-the query in the log domain and says so in the diagnostics’
-`log_fallback`. Both paths return the exact answer throughout:
+the query in exact arithmetic and says so in the diagnostics’
+`exact_fallback`. Both paths return the exact answer throughout:
 
 ``` julia
 all(compare(n).default == exact && compare(n).log_domain == exact
@@ -138,6 +139,21 @@ all(compare(n).default == exact && compare(n).log_domain == exact
 ```
 
     true
+
+To four decimals, that is. The two paths are not the same computation.
+The exact fallback returns each cell as the Float64 nearest the exact
+posterior of the model as bound; the log domain takes logarithms and
+exponentials on the way, and each of those rounds:
+
+``` julia
+m340, v340 = detection_chain(340)
+rare340 = Dict(v => :yes for v in v340[1:339])
+(fallback = first(infer(m340, :D340; evidence = rare340)).table,
+ log_domain = first(infer(m340, :D340; evidence = rare340,
+                          backend = LogVariableElimination())).table)
+```
+
+    (fallback = [0.9, 0.1], log_domain = [0.8999999999999999, 0.09999999999999998])
 
 The middle regime is why the test is “normal”, not “nonzero”: silent
 precision loss arrives *before* outright underflow, and only the closed
@@ -285,10 +301,12 @@ by log-sum-exp on centered factors. What it buys is the range to carry
 evidence that is merely rare, and — because a finite log mass and `-Inf`
 are different numbers, whereas zero and zero are not — the ability to
 say whether an observation was too small to represent or genuinely
-impossible. The default backends fall back to it exactly when their
-Float64 mass cannot make that distinction, so `ImpossibleEvidenceError`
-means probability exactly zero everywhere. What it does not buy is a
-bound on the error of a posterior cell.
+impossible. What it does not buy is a bound on the error of a posterior
+cell. The default backends therefore do not fall back to it: when their
+Float64 mass cannot tell rare from impossible, they recompute in exact
+arithmetic, which decides impossibility exactly and rounds each
+posterior cell once, so `ImpossibleEvidenceError` means probability
+exactly zero everywhere.
 
 The exact-arithmetic decision path of `InfluenceDiagrams.jl` answers the
 same concern for decisions rather than posteriors, where the quantity at
