@@ -235,9 +235,6 @@ function Base.show(io::IO, c::CalibratedJunctionTree{T}) where {T}
                  " cliques, P(evidence) = ", c.evidence_probability)
 end
 
-# Sum out everything in the scope of `f` that is not in `keep`.
-_project(f::Factor, keep::Vector{Symbol}) = marginalize(f, setdiff(f.vars, keep))
-
 function _junction_tree_messages(jt, potentials::Vector{F}, separators, product,
                                  project) where {F}
     n = length(jt)
@@ -266,6 +263,37 @@ function _junction_tree_messages(jt, potentials::Vector{F}, separators, product,
     return beliefs, n_messages
 end
 
+# Shafer-Shenoy calibration in the arithmetic `A` (arithmetic.jl), shared by `calibrate` and
+# `log_calibrate`: condition every factor on the evidence and multiply it into its clique's
+# potential (or into `constant`, for a factor with no variable left), then pass the collect
+# and distribute messages. What the beliefs' masses mean is the caller's.
+function _calibrate(A::_Arithmetic, fg::FactorGraph{T}, jt::CompiledJunctionTree, evidence,
+                    operation::Symbol) where {T}
+    _check_query(fg, Symbol[], evidence)
+    length(jt.assignment) == length(fg.factors) ||
+        throw(ShapeError(operation,
+                         "the junction tree was built for a different factor graph",
+                         length(jt.assignment), length(fg.factors)))
+    ev = Dict{Symbol,Symbol}(evidence)
+    F = _factor_type(A, T)
+    lists = [F[] for _ in 1:length(jt)]
+    constant = _unit(A, T)
+    for (f, c) in zip(fg.factors, jt.assignment)
+        g = _conditioned(A, f, ev)
+        if c == 0
+            constant = _multiply(A, constant, g)
+        else
+            push!(lists[c], g)
+        end
+    end
+    potentials = F[_product!(A, lists[c]) for c in 1:length(jt)]
+    seps = [Symbol[v for v in s if !haskey(ev, v)] for s in jt.separators]
+    beliefs, n_messages = _junction_tree_messages(jt, potentials, seps,
+                                                  fs -> _product!(A, fs),
+                                                  (f, keep) -> _project(A, f, keep))
+    return ev, potentials, constant, beliefs, n_messages
+end
+
 """
     calibrate(fg::FactorGraph, jt=build_junction_tree(fg; order); evidence=Dict{Symbol,Symbol}(), order=MinFill())
         -> CalibratedJunctionTree
@@ -291,26 +319,8 @@ Throws [`ScopeError`](@ref) for evidence on unknown variables and
 """
 function calibrate(fg::FactorGraph{T}, jt::CompiledJunctionTree;
                    evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}()) where {T}
-    _check_query(fg, Symbol[], evidence)
-    ev = Dict{Symbol,Symbol}(evidence)
-    n = length(jt)
-    length(jt.assignment) == length(fg.factors) ||
-        throw(ShapeError(:calibrate,
-                         "the junction tree was built for a different factor graph",
-                         length(jt.assignment), length(fg.factors)))
-    lists = [Factor{T}[] for _ in 1:n]
-    constant = unit_factor(T)
-    for (f, c) in zip(fg.factors, jt.assignment)
-        g = condition(f, ev)
-        if c == 0
-            constant = multiply(constant, g)
-        else
-            push!(lists[c], g)
-        end
-    end
-    potentials = Factor{T}[_product!(lists[c]) for c in 1:n]
-    seps = [Symbol[v for v in s if !haskey(ev, v)] for s in jt.separators]
-    beliefs, n_messages = _junction_tree_messages(jt, potentials, seps, _product!, _project)
+    ev, potentials, constant, beliefs, n_messages = _calibrate(_Linear(), fg, jt, evidence,
+                                                               :calibrate)
     mass = constant.table[]
     for r in jt.roots
         mass *= sum(beliefs[r].table)
@@ -374,13 +384,13 @@ function _containing_clique(jt::CompiledJunctionTree, axes, query)
     return best == 0 ? nothing : best
 end
 
-# Callers check the global mass before reading a single component's posterior. The
-# belief's own mass is checked again as it is normalised, so a clique whose sum is zero
-# although the global mass was positive raises the same `ImpossibleEvidenceError` rather
-# than `normalize`'s `ArgumentError`.
-function _belief_marginal(belief::Factor, query, evidence)
-    return _posterior_normalize(reorder(_project(belief, collect(Symbol, query)), query),
-                                evidence)
+# The posterior of `query` read off a clique belief, in either arithmetic. Callers check the
+# global mass first; `_normalized` checks the belief's own linear mass again, so a clique
+# whose sum is zero although the global mass was positive raises the same
+# `ImpossibleEvidenceError` rather than `normalize`'s `ArgumentError`.
+function _belief_marginal(A::_Arithmetic, belief, query, evidence)
+    q = collect(Symbol, query)
+    return _normalized(A, _reorder(A, _project(A, belief, q), q), evidence)
 end
 
 function _infer(backend::JunctionTree, fg::FactorGraph, query, evidence)
@@ -413,7 +423,8 @@ function _infer_binary64(backend::JunctionTree, fg::FactorGraph{T}, query,
     end
     cal = calibrate(fg, jt; evidence)
     _require_evidence_mass(cal.evidence_probability, evidence)
-    return _belief_marginal(cal.beliefs[c], query, evidence), _diagnostics(cal, c)
+    return _belief_marginal(_Linear(), cal.beliefs[c], query, evidence),
+           _diagnostics(cal, c)
 end
 
 """
@@ -437,7 +448,7 @@ function _clique_beliefs(backend::JunctionTree, fg::FactorGraph, evidence)
     ordinary = function ()
         cal = calibrate(fg, build_junction_tree(fg; order=backend.order); evidence)
         _require_evidence_mass(cal.evidence_probability, evidence)
-        return [_posterior_normalize(belief, evidence) for belief in cal.beliefs]
+        return [_normalized(_Linear(), belief, evidence) for belief in cal.beliefs]
     end
     return _resolving_mass(ordinary, evidence) do
         return _clique_beliefs(LogJunctionTree(; order=backend.order), fg, evidence)
@@ -477,16 +488,9 @@ function _all_marginals_binary64(backend::JunctionTree, fg::FactorGraph{T},
     jt = build_junction_tree(fg; order=backend.order)
     cal = calibrate(fg, jt; evidence)
     _require_evidence_mass(cal.evidence_probability, evidence)
-    R = _division_type(T)
-    out = Dict{Symbol,Factor{R}}()
-    for (v, ax) in fg.axes
-        if haskey(evidence, v)
-            out[v] = _point_mass(R, ax, evidence[v])
-        else
-            out[v] = _belief_marginal(cal.beliefs[jt.home[v]], [v], evidence)
-        end
+    return _collect_marginals(fg, evidence, _division_type(T)) do v
+        return _belief_marginal(_Linear(), cal.beliefs[jt.home[v]], [v], evidence)
     end
-    return out
 end
 
 function _all_marginals(backend::VariableElimination, fg::FactorGraph{T},
@@ -499,16 +503,9 @@ function _all_marginals(backend::VariableElimination, fg::FactorGraph{T},
             return nothing
         end
     end
-    R = _division_type(T)
-    out = Dict{Symbol,Factor{R}}()
-    for (v, ax) in fg.axes
-        if haskey(evidence, v)
-            out[v] = _point_mass(R, ax, evidence[v])
-        else
-            out[v] = variable_elimination(fg, [v]; evidence, order=backend.order)[1]
-        end
+    return _collect_marginals(fg, evidence, _division_type(T)) do v
+        return first(variable_elimination(fg, [v]; evidence, order=backend.order))
     end
-    return out
 end
 
 # The factor that puts all mass on `label` of `ax`.

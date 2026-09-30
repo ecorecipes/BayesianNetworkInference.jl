@@ -135,6 +135,7 @@ include("errors.jl")  # first: its field types all come from Base
 include("factors.jl")
 include("factor_graph.jl")
 include("orderings.jl")
+include("arithmetic.jl")  # the two arithmetics the exact drivers are written against
 include("variable_elimination.jl")
 include("junction_tree.jl")
 include("log_variable_elimination.jl")

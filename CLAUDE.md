@@ -95,26 +95,33 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
   needs `import AMD`), `ExactTreewidth` (`BT`, needs `import TreeWidthSolver`; run per connected component because BT
   fails on isolated vertices), `UserOrder`; `elimination_order(fg, strategy; keep)` via
   `permutation(graph; alg=CompositeRotations(keep_idx, alg))`, `treewidth(fg, strategy)`.
+- `src/arithmetic.jl` (review item 8, S3): the two arithmetics the exact drivers are written against,
+  `_Linear` (a `Factor`) and `_LogDomain` (a `_LogFactor`: centred log table plus log scale), with the
+  operations `_conditioned`, `_product!`, `_multiply`, `_sum_out`, `_project`, `_reorder`, `_unit` and
+  `_normalized`, the log primitives (`_as_log_factor`, `_log_multiply`, `_log_sum_out`, `_log_mass`,
+  `_log_mass_status`) and `_collect_marginals` (point masses for observed variables). The drivers are
+  written once: `_eliminate` (bucket elimination, variable_elimination.jl) serves `variable_elimination`
+  and `log_variable_elimination`; `_calibrate` and `_belief_marginal` (junction_tree.jl) serve `calibrate`,
+  `log_calibrate` and every belief read-off. A change to an algorithm goes in the driver; a change to an
+  arithmetic goes in its operations. Never write a second copy of a driver for one arithmetic -- that is
+  how C6 (the empty-scope `normalize`) reached one copy and not the other.
 - `src/variable_elimination.jl`: `VariableElimination` backend, `InferenceDiagnostics`, `variable_elimination`,
-  and the elimination-order cache: `graph`/`vars`/`index` exist only to produce `elim`, so the order is what
+  the shared driver `_eliminate`, and the elimination-order cache (shared by both arithmetics, whose
+  conditioned scopes are the same): `graph`/`vars`/`index` exist only to produce `elim`, so the order is what
   is cached, keyed on `objectid(fg.factors)` plus the evidence's *keys*, the strategy and the query (the
   conditioned scopes depend on which variables are observed, not on their values, so `predict` shares one
   entry across every case). Same `WeakRef`/`===` discipline as the junction-tree cache, and the same rule:
   do not mutate `fg.factors` after a query.
   `infer`, oracle `joint_factor` / `brute_force_marginal`.
 - `src/log_variable_elimination.jl`: `LogVariableElimination` backend,
-  `LogInferenceDiagnostics`, `log_variable_elimination`,
-  `log_evidence_probability`. The same elimination algorithm as `variable_elimination.jl`
-  carried out in the log domain, for models whose joint underflows Float64. Keep the two in
-  step: they are written out twice, and a fix applied to one and not the other is how
-  `normalize`'s empty-scope bug came about.
+  `LogInferenceDiagnostics`, `log_variable_elimination`, `log_evidence_probability`: the shared
+  `_eliminate` run in `_LogDomain`, plus the log mass and its status.
 - `src/log_junction_tree.jl`: `LogJunctionTree`, `LogCalibratedJunctionTree`,
-  `LogJunctionTreeDiagnostics`, `log_calibrate`. The log-domain counterpart of
-  `junction_tree.jl`, with the same caveat.
+  `LogJunctionTreeDiagnostics`, `log_calibrate`: the shared `_calibrate` run in `_LogDomain`.
 - `src/execution_trace.jl`: `trace_variable_elimination`, which records each product and
   marginalisation of a run as data for the external conformance checker. The trace's
   `inputs` are in factor-graph order, which is *not* the association order of the recorded
-  product (`_product!` sorts `touching` by `ndims` first); the format does not record that
+  product (`_product!` sorts `touching` stably by `ndims` first, in both arithmetics); the format does not record that
   order, and ADR 0011 notes that reassociation alone changes the answer.
 - `src/junction_tree.jl`: `JunctionTree(; order)` backend, `CompiledJunctionTree` from
   `CliqueTrees.cliquetree(graph; alg, snd=Maximal())` (`residual`/`separator`, `parentindex`/`childindices`/

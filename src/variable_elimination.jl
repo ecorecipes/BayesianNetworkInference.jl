@@ -197,52 +197,61 @@ function _cached_elimination_order(factors::Vector{<:Factor}, owner, query, evid
     return elim
 end
 
-function _variable_elimination(fg::FactorGraph{T}, query, evidence, order,
-                               observer) where {T}
+# Bucket elimination in the arithmetic `A` (arithmetic.jl), shared by `variable_elimination`
+# and `log_variable_elimination`: condition every factor on the evidence, eliminate the
+# non-query variables in the (cached) order, multiply what is left and put it in `query`
+# order. Returns that unnormalised factor with the order, the largest factor, the number of
+# multiplications and the width. Normalising, and deciding what the mass means, is the
+# caller's. `observer` sees the conditioned inputs, each bucket and the final product; only
+# the linear execution trace passes one.
+function _eliminate(A::_Arithmetic, fg::FactorGraph{T}, query, evidence, order,
+                    observer=nothing) where {T}
     _check_query(fg, query, evidence)
-    factors = Factor{T}[condition(f, evidence) for f in fg.factors]
+    F = _factor_type(A, T)
+    factors = F[_conditioned(A, f, evidence) for f in fg.factors]
     observer === nothing || observer(:conditioned, factors)
-    elim = _cached_elimination_order(factors, fg.factors, query, evidence, order)
+    elim = _cached_elimination_order(Factor[_plain(f) for f in factors], fg.factors, query,
+                                     evidence, order)
     max_size = 0
     n_mult = 0
     width = 0
     for v in elim
-        touching = Factor{T}[]
-        rest = Factor{T}[]
+        touching = F[]
+        rest = F[]
         for f in factors
-            push!(v in f.vars ? touching : rest, f)
+            push!(v in _plain(f).vars ? touching : rest, f)
         end
-        prod = _product!(touching)
+        prod = _product!(A, touching)
         n_mult += max(length(touching) - 1, 0)
-        max_size = max(max_size, length(prod))
-        width = max(width, ndims(prod) - 1)
-        reduced = marginalize(prod, v)
+        max_size = max(max_size, length(_plain(prod)))
+        width = max(width, ndims(_plain(prod)) - 1)
+        reduced = _sum_out(A, prod, v)
         if observer !== nothing
-            indices = findall(f -> v in f.vars, factors)
+            indices = findall(f -> v in _plain(f).vars, factors)
             observer(:bucket, (variable=v, inputs=indices, product=prod, result=reduced))
         end
         push!(rest, reduced)
         factors = rest
     end
-    result = _product!(factors)
+    result = _product!(A, factors)
     n_mult += max(length(factors) - 1, 0)
-    max_size = max(max_size, length(result))
-    width = max(width, ndims(result) - 1)
-    result = reorder(result, query)
+    max_size = max(max_size, length(_plain(result)))
+    width = max(width, ndims(_plain(result)) - 1)
+    result = _reorder(A, result, query)
     observer === nothing || observer(:final_product, result)
-    isempty(query) || (result = _posterior_normalize(result, evidence))
+    return result, elim, max_size, n_mult, width
+end
+
+function _variable_elimination(fg::FactorGraph, query, evidence, order, observer)
+    result, elim, max_size, n_mult, width = _eliminate(_Linear(), fg, query, evidence,
+                                                       order,
+                                                       observer)
+    isempty(query) || (result = _normalized(_Linear(), result, evidence))
     observer === nothing || observer(:result, result)
     return result, InferenceDiagnostics(elim, max_size, n_mult, width)
 end
 function variable_elimination(fg::FactorGraph, query::Symbol; kwargs...)
     return variable_elimination(fg, [query]; kwargs...)
-end
-
-# Product of a list of factors, multiplying the smallest scopes first.
-function _product!(fs::Vector{<:Factor})
-    isempty(fs) && return unit_factor()
-    sort!(fs; by=ndims)
-    return reduce(multiply, fs)
 end
 
 """

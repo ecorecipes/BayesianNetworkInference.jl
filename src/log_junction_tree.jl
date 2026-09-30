@@ -49,24 +49,8 @@ struct LogJunctionTreeDiagnostics
     mass_status::Symbol
 end
 
-function _log_project(factor::_LogFactor, keep::Vector{Symbol})
-    result = factor
-    for variable in setdiff(factor.factor.vars, keep)
-        result = _log_sum_out(result, variable)
-    end
-    return result
-end
-
-function _log_mass(factor::_LogFactor)
-    total = sum(exp, factor.factor.table)
-    return iszero(total) ? -Inf : factor.log_scale + log(total)
-end
-
-function _log_mass_status(log_mass)
-    log_mass == -Inf && return :zero
-    mass = exp(log_mass)
-    return iszero(mass) ? :underflow : isinf(mass) ? :overflow : :finite
-end
+# `_LogFactor`, `_log_mass` and `_log_mass_status` are in arithmetic.jl; the calibration
+# itself is the shared `_calibrate` (junction_tree.jl).
 
 """
     log_calibrate(fg, jt=build_junction_tree(fg; order); evidence=Dict(), order=MinFill())
@@ -79,26 +63,8 @@ floating-point error bound.
 """
 function log_calibrate(fg::FactorGraph, jt::CompiledJunctionTree;
                        evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}())
-    _check_query(fg, Symbol[], evidence)
-    length(jt.assignment) == length(fg.factors) ||
-        throw(ShapeError(:log_calibrate, "the tree was built for a different factor graph",
-                         length(jt.assignment), length(fg.factors)))
-    ev = Dict{Symbol,Symbol}(evidence)
-    lists = [_LogFactor[] for _ in 1:length(jt)]
-    constant = _log_product(_LogFactor[])
-    for (factor, clique) in zip(fg.factors, jt.assignment)
-        logged = _as_log_factor(factor)
-        conditioned = _center_log(condition(logged.factor, ev), logged.log_scale)
-        if clique == 0
-            constant = _log_multiply(constant, conditioned)
-        else
-            push!(lists[clique], conditioned)
-        end
-    end
-    potentials = _LogFactor[_log_product(items) for items in lists]
-    separators = [Symbol[v for v in scope if !haskey(ev, v)] for scope in jt.separators]
-    beliefs, count = _junction_tree_messages(jt, potentials, separators, _log_product,
-                                             _log_project)
+    ev, potentials, constant, beliefs, count = _calibrate(_LogDomain(), fg, jt, evidence,
+                                                          :log_calibrate)
     masses = [_log_mass(constant); [_log_mass(beliefs[root]) for root in jt.roots]]
     log_mass = any(==(-Inf), masses) ? -Inf : sum(masses)
     return LogCalibratedJunctionTree(jt, ev, potentials, beliefs, log_mass, count)
@@ -119,15 +85,6 @@ function _diagnostics(cal::LogCalibratedJunctionTree, clique::Int)
                                       _log_mass_status(cal.log_evidence_probability))
 end
 
-function _log_belief_marginal(belief::_LogFactor, query)
-    projected = _log_project(belief, collect(Symbol, query))
-    result = reorder(projected.factor, query)
-    weights = similar(result.table)
-    weights .= exp.(result.table)
-    weights ./= sum(weights)
-    return _factor(result.vars, result.axes, weights)
-end
-
 function _infer(backend::LogJunctionTree, fg::FactorGraph, query, evidence)
     _check_query(fg, query, evidence)
     tree = build_junction_tree(fg; order=backend.order)
@@ -146,22 +103,21 @@ function _infer(backend::LogJunctionTree, fg::FactorGraph, query, evidence)
                _diagnostics(cal, 0)
     end
     cal.log_evidence_probability == -Inf && _impossible(evidence)
-    return _log_belief_marginal(cal.beliefs[clique], query), _diagnostics(cal, clique)
+    return _belief_marginal(_LogDomain(), cal.beliefs[clique], query, evidence),
+           _diagnostics(cal, clique)
 end
 
 function _all_marginals(backend::LogJunctionTree, fg::FactorGraph, evidence)
     cal = log_calibrate(fg; evidence, order=backend.order)
     cal.log_evidence_probability == -Inf && _impossible(evidence)
-    return Dict{Symbol,Factor{Float64}}(variable => haskey(evidence, variable) ?
-                                                    _point_mass(Float64, axis,
-                                                                evidence[variable]) :
-                                                    _log_belief_marginal(cal.beliefs[cal.tree.home[variable]],
-                                                                         [variable])
-                                        for (variable, axis) in fg.axes)
+    return _collect_marginals(fg, evidence, Float64) do v
+        return _belief_marginal(_LogDomain(), cal.beliefs[cal.tree.home[v]], [v], evidence)
+    end
 end
 
 function _clique_beliefs(backend::LogJunctionTree, fg::FactorGraph, evidence)
     cal = log_calibrate(fg; evidence, order=backend.order)
     cal.log_evidence_probability == -Inf && _impossible(evidence)
-    return [_log_belief_marginal(belief, belief.factor.vars) for belief in cal.beliefs]
+    return [_belief_marginal(_LogDomain(), belief, belief.factor.vars, evidence)
+            for belief in cal.beliefs]
 end
