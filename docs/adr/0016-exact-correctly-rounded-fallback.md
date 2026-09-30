@@ -66,8 +66,12 @@ cost of `BigInt` arithmetic, on a path that runs only when the ordinary mass is 
 
 - A posterior returned through the fallback is bit-for-bit the correctly rounded exact posterior. The tests check
   this against independently computed `Rational{BigInt}` references in `BayesianNetworks` and
-  `BayesianNetworkInference`. The `evidence-underflow` stress query should now agree strictly; the conformance run
-  of this change records the outcome.
+  `BayesianNetworkInference`.
+- **Conformance.** On the `evidence-underflow` stress fixture the Julia posterior is now `[0.25, 0.75]`, 0 ulp from
+  the exact reference, where the log fallback was one ulp off. `stress.py` still classifies the query as
+  `evidence_underflow`, as it does for pgmpy, pyAgrum and gRain. The comparison also checks the reported evidence
+  mass, and a mass of about `1e-400` has no Float64 representation, so no engine can agree on it. No protocol
+  change is needed.
 - **Cost.** The fallback does `BigInt` arithmetic. Integers grow by about 53 bits for each factor multiplied into a
   product, and the exponents of the dyadic form add rather than enlarge the integers. The fallback runs only when
   the binary64 mass is untrusted. It is exponential in the same width as the ordinary run.
