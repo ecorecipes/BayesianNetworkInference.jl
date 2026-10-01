@@ -127,7 +127,14 @@ package's own function. Sibling packages are expected at `../<Name>.jl` (see `[s
 - `src/junction_tree.jl`: `JunctionTree(; order)` backend, `CompiledJunctionTree` from
   `CliqueTrees.cliquetree(graph; alg, snd=Maximal())` (`residual`/`separator`, `parentindex`/`childindices`/
   `rootindices`; cliques are numbered in the permuted order, `label[v]` maps back), cached in a `Dict` keyed by
-  `objectid(fg.factors)` with a `WeakRef` checked by `===` (identity, not content); `calibrate` (Shafer-Shenoy: collect then distribute, no division, so zero entries are
+  `objectid(fg.factors)` with a `WeakRef` checked by `===` (identity, not content). Before it is returned,
+  `_check_junction_tree` checks CliqueTrees' output and the factor assignment against the hypotheses of the Lean
+  `calibrate_correct` (`Good`, `checkAssignment`, via `graft_good`/`forest_good`): a rooted forest whose
+  children, roots and postorder agree with `parent`, separators equal to clique ∩ parent clique, running
+  intersection (one top clique per variable), every variable covered and none repeated, every factor scope in its
+  clique. A failure is `ScopeError(:build_junction_tree, ...)` naming the condition. It is a runtime check, once per
+  compiled (cached) tree, not a proof that CliqueTrees is correct; every tree is built through
+  `_build_junction_tree`, so keep any new tree source going through it. `calibrate` (Shafer-Shenoy: collect then distribute, no division, so zero entries are
   safe), `clique_beliefs`, `all_marginals` (JT in one pass; VE method loops per variable; evidence variables
   are point masses), `infer` for one-clique queries with a VE fallback that warns and sets
   `JunctionTreeDiagnostics.fallback` (the return type never changes), `JunctionTreeDiagnostics`.

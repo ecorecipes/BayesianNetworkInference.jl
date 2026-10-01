@@ -124,6 +124,15 @@ strategy (see [`CompiledJunctionTree`](@ref)). Clique trees and the
 junction-tree property are set out in [KollerFriedman2009](@cite)
 (chapter 10).
 
+The tree is checked once, when it is built, against the hypotheses of the
+calibration proof (`Good` and `checkAssignment` in the Lean project): throws
+[`ScopeError`](@ref) if CliqueTrees returns a tree that is not a rooted forest
+(parent, children, roots and postorder disagree, or the parent links cycle), whose
+separators are not the intersections of cliques with their parents, in which the
+cliques holding a variable are not connected (running intersection), that misses
+or repeats a variable, or on which a factor's scope lies in no clique. This is a
+runtime check of CliqueTrees' output, not a proof of it.
+
 ```jldoctest
 julia> a = FiniteAxis(:A, [:x, :y]); b = FiniteAxis(:B, [:x, :y]); c = FiniteAxis(:C, [:x, :y]);
 
@@ -178,15 +187,17 @@ function _build_junction_tree(fg::FactorGraph, strategy::EliminationStrategy)
         push!(member[v], i)
     end
     size_of(i) = prod(length(fg.axes[v]) for v in cliques[i]; init=1)
-    home = Dict{Symbol,Int}(v => argmin(i -> size_of(i), member[v]) for v in vars)
+    # `0` for a variable in no clique, or a factor whose scope no clique holds: both
+    # are reported by `_check_junction_tree` below, with the condition named.
+    home = Dict{Symbol,Int}(v => isempty(member[v]) ? 0 : argmin(size_of, member[v])
+                            for v in vars)
     assignment = map(fg.factors) do f
         isempty(f.vars) && return n == 0 ? 0 : 1
         candidates = reduce(intersect, (member[v] for v in f.vars))
-        isempty(candidates) &&
-            throw(ScopeError(:build_junction_tree,
-                             "no clique contains the scope of a factor", f.vars))
-        return argmin(i -> size_of(i), candidates)
+        return isempty(candidates) ? 0 : argmin(size_of, candidates)
     end
+    _check_junction_tree(cliques, separators, parent, children, roots, postorder,
+                         assignment, [f.vars for f in fg.factors], vars)
     return CompiledJunctionTree(cliques, separators, parent, children, roots, postorder,
                                 assignment, home, Symbol[name(v) for v in 1:length(vars)],
                                 width)
@@ -208,6 +219,150 @@ function _postorder(children::Vector{Vector{Int}}, roots::Vector{Int})
         end
     end
     return order
+end
+
+_tree_error(msg, vars=Symbol[]) = throw(ScopeError(:build_junction_tree, msg, vars))
+
+# A runtime check that the tree CliqueTrees returned, and the factor assignment computed
+# from it, satisfy the hypotheses under which `calibrate` is proved correct; it is not a
+# proof that CliqueTrees is correct, and it says nothing about the arithmetic. It mirrors
+# `Good` and `checkAssignment` of `BayesianNetworks.jl/proofs/BayesianNetworksProofs/
+# Finite/JunctionTree.lean` (`calibrate_correct`, `calibrate_eq_ve`), translated from
+# Lean's binary trees to the n-ary forest here through `graft_good` and `forest_good`:
+#
+# - the parent/children/roots/postorder data form a rooted forest (the Lean `Tree` is a
+#   tree by construction; `forest_good` hangs its components under an empty virtual root,
+#   which is what the scalar root masses of `calibrate` are);
+# - running intersection: `Good` asks, at every node with bag `B`, that each child
+#   subtree meets `B` only inside the child's bag (`l.vars ∩ B ⊆ l.bag`), that two child
+#   subtrees meet only inside `B` (`l.vars ∩ r.vars ⊆ B`, `graft_good`'s pairwise
+#   premise), and `forest_good` that components share no variable. Over a forest these
+#   together say that the cliques containing each variable form one connected subtree,
+#   which is checked in the equivalent form "every variable has exactly one top clique",
+#   a clique holding it whose parent does not (or that is a root);
+# - every separator is its clique intersected with its parent's clique, empty at a root:
+#   Lean's `prepare` projects the upward message onto the parent's whole bag, and under
+#   running intersection that projection keeps exactly this intersection;
+# - every factor's scope lies in its clique (`(localFactor F fs).scope ⊆ B`); an
+#   empty-scope factor may sit in any clique, or in `0`, the scalar `constant` of
+#   `_calibrate` (the empty virtual root of `forest_good`);
+# - `checkAssignment`'s "every factor index occurs exactly once" holds by the shape of
+#   `assignment` (one entry per factor), checked by its length;
+# - every interaction-graph variable is in some clique and no clique repeats one (Lean's
+#   bags are `Finset`s); `calibrate_eq_ve`'s `hvars` holds because the variables are
+#   read off the factor scopes. Linear in the total clique size.
+function _check_junction_tree(cliques, separators, parent, children, roots, postorder,
+                              assignment, scopes, vars)
+    n = length(cliques)
+    length(separators) == length(parent) == length(children) == n ||
+        _tree_error("the clique, separator, parent and children lists differ in length")
+    # forest: parents in range, no cycles, roots and children agree with parents
+    for i in 1:n
+        0 <= parent[i] <= n && parent[i] != i ||
+            _tree_error("clique $i has parent $(parent[i]), which is not another clique",
+                        cliques[i])
+    end
+    state = zeros(Int8, n)               # 0 unvisited, 1 on the current path, 2 done
+    path = Int[]
+    for i in 1:n
+        j = i
+        while j != 0 && state[j] == 0
+            state[j] = 1
+            push!(path, j)
+            j = parent[j]
+        end
+        j != 0 && state[j] == 1 &&
+            _tree_error("the parent links contain a cycle through clique $j", cliques[j])
+        foreach(k -> state[k] = 2, path)
+        empty!(path)
+    end
+    isroot = falses(n)
+    for r in roots
+        1 <= r <= n && parent[r] == 0 && !isroot[r] ||
+            _tree_error("root $r is not a distinct clique without a parent")
+        isroot[r] = true
+    end
+    for i in 1:n
+        parent[i] == 0 && !isroot[i] &&
+            _tree_error("clique $i has no parent but is not listed as a root", cliques[i])
+    end
+    listed = falses(n)
+    for i in 1:n, c in children[i]
+        1 <= c <= n && parent[c] == i && !listed[c] ||
+            _tree_error("children of clique $i disagree with the parent links: " *
+                        "child $c", cliques[i])
+        listed[c] = true
+    end
+    for i in 1:n
+        parent[i] == 0 || listed[i] ||
+            _tree_error("clique $i is missing from the children of its parent " *
+                        "$(parent[i])", cliques[i])
+    end
+    position = zeros(Int, n)
+    length(postorder) == n ||
+        _tree_error("the postorder does not visit every clique exactly once")
+    for (k, i) in enumerate(postorder)
+        1 <= i <= n && position[i] == 0 ||
+            _tree_error("the postorder does not visit every clique exactly once")
+        position[i] = k
+    end
+    for i in 1:n
+        parent[i] == 0 || position[i] < position[parent[i]] ||
+            _tree_error("the postorder visits clique $(parent[i]) before its child $i",
+                        cliques[i])
+    end
+    # bags: no repeats, graph variables only, separators are intersections with parents
+    known = Set{Symbol}(vars)
+    sets = [Set{Symbol}(c) for c in cliques]
+    for i in 1:n
+        length(sets[i]) == length(cliques[i]) ||
+            _tree_error("clique $i repeats a variable", cliques[i])
+        issubset(sets[i], known) ||
+            _tree_error("clique $i holds a variable outside the interaction graph",
+                        setdiff(cliques[i], known))
+        p = parent[i]
+        sep = separators[i]
+        ok = if p == 0
+            isempty(sep)
+        else
+            length(sep) == length(Set(sep)) && all(in(sets[i]), sep) &&
+                all(in(sets[p]), sep) && count(in(sets[p]), cliques[i]) == length(sep)
+        end
+        ok || _tree_error("the separator of clique $i is not its intersection with its " *
+                          "parent clique $p (empty for a root)", sep)
+    end
+    # running intersection and coverage: exactly one top clique per variable
+    top = Dict{Symbol,Int}(v => 0 for v in vars)
+    for i in 1:n
+        p = parent[i]
+        for v in cliques[i]
+            p != 0 && v in sets[p] && continue
+            top[v] == 0 ||
+                _tree_error("the cliques containing a variable are not connected " *
+                            "(running intersection fails at cliques $(top[v]) and $i)",
+                            [v])
+            top[v] = i
+        end
+    end
+    for v in vars
+        top[v] == 0 && _tree_error("a variable of the interaction graph is in no clique",
+                                   [v])
+    end
+    # factor assignment
+    length(assignment) == length(scopes) ||
+        _tree_error("the assignment does not give exactly one clique per factor")
+    for (j, (s, c)) in enumerate(zip(scopes, assignment))
+        if isempty(s)
+            0 <= c <= n || _tree_error("empty-scope factor $j is assigned to clique $c, " *
+                                       "which does not exist")
+        else
+            1 <= c <= n && all(in(sets[c]), s) ||
+                _tree_error("no clique contains the scope of a factor: factor $j is " *
+                            "assigned to clique $c, which does not hold its scope",
+                            collect(Symbol, s))
+        end
+    end
+    return nothing
 end
 
 """

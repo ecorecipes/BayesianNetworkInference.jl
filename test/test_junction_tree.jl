@@ -325,3 +325,113 @@ end
     @test normalize(empty_scope).table == fill(1.0)
     @test normalize(empty_scope).table isa AbstractArray{Float64,0}
 end
+
+@testset "junction-tree validation (Lean Good and checkAssignment)" begin
+    check = BayesianNetworkInference._check_junction_tree
+    check_compiled(jt, fg) = check(jt.cliques, jt.separators, jt.parent, jt.children,
+                                   jt.roots, jt.postorder, jt.assignment,
+                                   [scope(f) for f in fg.factors], variables(fg))
+    # The ScopeError a corrupted tree raises, or nothing.
+    function tree_error(t)
+        try
+            check(t.cliques, t.separators, t.parent, t.children, t.roots, t.postorder,
+                  t.assignment, t.scopes, t.vars)
+        catch e
+            return e
+        end
+        return nothing
+    end
+    rejects(t, fragment) = (e = tree_error(t);
+                            e isa ScopeError && e.operation == :build_junction_tree &&
+                                occursin(fragment, e.msg))
+
+    # A hand-built forest: [:A, :B] under [:B, :C], and [:D] on its own; the last
+    # factor has an empty scope and sits in the scalar constant (clique 0).
+    valid = (cliques=[[:A, :B], [:B, :C], [:D]], separators=[[:B], Symbol[], Symbol[]],
+             parent=[2, 0, 0], children=[Int[], [1], Int[]], roots=[2, 3],
+             postorder=[1, 2, 3], assignment=[1, 2, 3, 0],
+             scopes=[[:A, :B], [:B, :C], [:D], Symbol[]], vars=[:A, :B, :C, :D])
+    @test tree_error(valid) === nothing
+    @test tree_error(merge(valid, (assignment=[1, 2, 3, 2],))) === nothing
+    @test tree_error((cliques=Vector{Symbol}[], separators=Vector{Symbol}[],
+                      parent=Int[], children=Vector{Int}[], roots=Int[], postorder=Int[],
+                      assignment=[0], scopes=[Symbol[]], vars=Symbol[])) === nothing
+
+    @test rejects(merge(valid, (separators=[Symbol[], Symbol[], Symbol[]],)),
+                  "separator of clique 1 is not its intersection")
+    @test rejects(merge(valid, (separators=[[:A, :B], Symbol[], Symbol[]],)),
+                  "separator of clique 1 is not its intersection")
+    @test rejects(merge(valid, (separators=[[:B], Symbol[], [:D]],)),
+                  "separator of clique 3")
+    # :A is in clique 1 and in the separate root clique 3
+    @test rejects(merge(valid, (cliques=[[:A, :B], [:B, :C], [:D, :A]],)),
+                  "cliques containing a variable are not connected")
+    @test rejects(merge(valid, (assignment=[2, 2, 3, 0],)),
+                  "factor 1 is assigned to clique 2, which does not hold its scope")
+    @test rejects(merge(valid, (assignment=[0, 2, 3, 0],)),
+                  "no clique contains the scope of a factor")
+    @test rejects(merge(valid, (assignment=[1, 2, 3, 4],)), "empty-scope factor 4")
+    @test rejects(merge(valid, (assignment=[1, 2, 3],)), "exactly one clique per factor")
+    @test rejects(merge(valid, (parent=[2, 1, 0], children=[[2], [1], Int[]], roots=[3])),
+                  "parent links contain a cycle")
+    @test rejects(merge(valid, (parent=[1, 0, 0],)), "which is not another clique")
+    @test rejects(merge(valid, (children=[Int[], Int[], [1]],)),
+                  "children of clique 3 disagree with the parent links")
+    @test rejects(merge(valid, (children=[Int[], Int[], Int[]],)),
+                  "clique 1 is missing from the children of its parent 2")
+    @test rejects(merge(valid, (children=[Int[], [1, 1], Int[]],)),
+                  "disagree with the parent links")
+    @test rejects(merge(valid, (roots=[2],)), "clique 3 has no parent but is not listed")
+    @test rejects(merge(valid, (roots=[1, 2, 3],)), "root 1 is not a distinct clique")
+    @test rejects(merge(valid, (postorder=[2, 1, 3],)),
+                  "postorder visits clique 2 before its child 1")
+    @test rejects(merge(valid, (postorder=[1, 1, 3],)), "every clique exactly once")
+    @test rejects(merge(valid, (vars=[:A, :B, :C, :D, :E],)),
+                  "a variable of the interaction graph is in no clique")
+    @test rejects(merge(valid, (cliques=[[:A, :B], [:B, :C], [:D, :D]],)),
+                  "clique 3 repeats a variable")
+    @test rejects(merge(valid, (cliques=[[:A, :B], [:B, :C], [:D, :E]],)),
+                  "outside the interaction graph")
+    @test rejects(merge(valid, (parent=[2, 0],)), "differ in length")
+    e = tree_error(merge(valid, (vars=[:A, :B, :C, :D, :E],)))
+    @test e.vars == [:E]
+
+    # Every tree CliqueTrees builds on the fixtures passes (build_junction_tree has
+    # already run the check; this calls it again directly).
+    kernels, _, parents = asia_network()
+    fg = factor_graph_from(kernels, parents)
+    for s in (MinFill(), MinDegree(), AMDOrder(), ExactTreewidth(),
+              UserOrder([:asia, :tub, :smoke, :lung, :bronc, :either, :xray, :dysp]))
+        @test check_compiled(build_junction_tree(fg; order=s), fg) === nothing
+    end
+    hk, _, hparents = habitat_network(MersenneTwister(45))
+    hfg = factor_graph_from(hk, hparents)
+    @test check_compiled(build_junction_tree(hfg), hfg) === nothing
+    rng = MersenneTwister(2027)
+    for _ in 1:20
+        rk, _, rparents = random_dag_network(rng)
+        rfg = factor_graph_from(rk, rparents)
+        for s in (MinFill(), MinDegree(), ExactTreewidth())
+            @test check_compiled(build_junction_tree(rfg; order=s), rfg) === nothing
+        end
+    end
+    bk, _, bparents = benchmark_network(MersenneTwister(30))
+    bfg = factor_graph_from(bk, bparents)
+    @test check_compiled(build_junction_tree(bfg), bfg) === nothing
+    # a forest (two components and an isolated variable) with a scalar factor
+    ax(v) = FiniteAxis(v, [:a, :b])
+    forest = FactorGraph([Factor([ax(:A), ax(:B)], [0.9 0.1; 0.2 0.8]),
+                          Factor([ax(:B), ax(:C)], [0.6 0.4; 0.5 0.5]),
+                          Factor([ax(:D), ax(:E)], [0.3 0.7; 0.1 0.9]),
+                          Factor(ax(:F), [0.25, 0.75]),
+                          Factor(Symbol[], FiniteAxis[], fill(0.5))])
+    fjt = build_junction_tree(forest)
+    @test length(fjt.roots) == 3 && check_compiled(fjt, forest) === nothing
+    # the empty factor graph and a graph of scalar factors only
+    empty_fg = FactorGraph(Factor{Float64}[])
+    @test isempty(build_junction_tree(empty_fg).cliques)
+    @test check_compiled(build_junction_tree(empty_fg), empty_fg) === nothing
+    scalar = FactorGraph([Factor(Symbol[], FiniteAxis[], fill(0.5))])
+    @test build_junction_tree(scalar).assignment == [0]
+    @test check_compiled(build_junction_tree(scalar), scalar) === nothing
+end
