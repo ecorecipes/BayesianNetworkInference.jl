@@ -76,6 +76,15 @@
         end
         @test argmax_table(f, :A) isa Vector{Symbol}
         @test argmax_table(Factor(a, [0.2, 0.8]), :A)[] == :a1
+        # Ties resolve to the first label, signed zeros included: -0.0 == 0.0, although
+        # `Base.argmax` orders them by `isless` (LEAN-JULIA-DISCREPANCIES-2026-09-30, 1).
+        @test argmax_table(Factor(a, [-0.0, 0.0]), :A)[] == first(a.labels)
+        @test argmax_table(Factor(a, [0.0, -0.0]), :A)[] == first(a.labels)
+        @test argmax_table(Factor(a, [0.5, 0.5]), :A)[] == first(a.labels)
+        @test argmax_table(Factor([a, b], [-0.0 1.0 0.0; 0.0 1.0 -0.0]), :A) ==
+              fill(first(a.labels), 3)
+        # A row containing NaN has no maximizer.
+        @test_throws ArgumentError argmax_table(Factor(a, [NaN, 1.0]), :A)
     end
 
     @testset "condition" begin

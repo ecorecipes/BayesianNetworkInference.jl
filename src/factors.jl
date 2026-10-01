@@ -290,14 +290,28 @@ maximize(f::Factor, var::Symbol) = maximize(f, [var])
 
 For every configuration of the other variables (indexed in the order of
 `setdiff(scope(f), [var])`), the label of `var` at which `f` is maximal. Ties
-resolve to the first label. This is the policy table of a decision variable
-in decision variable elimination.
+resolve to the first label: entries are compared with `==`, so `-0.0` and `0.0`
+tie as the equal numbers they are (`Base.argmax` would order them by `isless`).
+This is the policy table of a decision variable in decision variable elimination,
+and the least-maximizer rule its Lean model proves (`Selector.ordered`). A row
+whose maximum is `NaN` has no maximizer and raises an `ArgumentError`.
 """
 function argmax_table(f::Factor, var::Symbol)
     d = _position(f, :argmax_table, var)
     labs = f.axes[d].labels
-    idx = dropdims(map(ci -> ci[d], argmax(f.table; dims=d)); dims=d)
+    idx = dropdims(mapslices(row -> _first_maximizer(row, var), f.table; dims=d); dims=d)
     return map(i -> labs[i], idx)
+end
+
+# The first position of a row's maximum, compared with `==` so that an exact tie, signed
+# zeros included, goes to the first label. `maximum` propagates `NaN`, which equals
+# nothing, so a row containing `NaN` has no maximizer.
+function _first_maximizer(row::AbstractVector, var::Symbol)
+    best = maximum(row)
+    i = findfirst(==(best), row)
+    i === nothing &&
+        throw(ArgumentError("argmax_table: a row of the factor over :$var contains NaN, so it has no maximum"))
+    return i
 end
 
 # Conditioning, normalisation, reordering
