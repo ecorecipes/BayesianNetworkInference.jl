@@ -171,7 +171,7 @@ post, diag = infer(fg, [:bronc, :either]; evidence=ev, backend=JunctionTree())
 diag
 ```
 
-    JunctionTreeDiagnostics(4, 6, 2, 8, 10, false)
+    JunctionTreeDiagnostics(4, 6, 2, 8, 10, false, false)
 
 ``` julia
 post ≈ infer(fg, [:bronc, :either]; evidence=ev)[1]
@@ -213,7 +213,7 @@ bp_marginals, bp_diag = belief_propagation(habitat; evidence=Dict(:Vegetation =>
 bp_diag
 ```
 
-    BPDiagnostics(3, true, 0.0, true, false)
+    BPDiagnostics(3, true, 0.0, true, false, false)
 
 ``` julia
 ve = all_marginals(habitat; evidence=Dict(:Vegetation => :dense), backend=VariableElimination())
@@ -233,7 +233,7 @@ loopy, loopy_diag = belief_propagation(fg)
 loopy_diag
 ```
 
-    BPDiagnostics(4, true, 1.3877787807814457e-17, false, false)
+    BPDiagnostics(4, true, 1.3877787807814457e-17, false, false, false)
 
 ``` julia
 exact = all_marginals(fg)
@@ -280,7 +280,7 @@ _, cut_diag = belief_propagation(fg; evidence=Dict(:either => :no))
 cut_diag
 ```
 
-    BPDiagnostics(4, true, 0.0, true, false)
+    BPDiagnostics(4, true, 0.0, true, false, false)
 
 VE and JT check global feasibility before returning a posterior, even
 for an unrelated component or an all-observed query. BP detects some
@@ -392,9 +392,9 @@ foreach(println, rows)
  repetitions = 3, statistic = "minimum after warm-up")
 ```
 
-    (backend = :JunctionTree, seconds = 0.0008, max_error = 2.22e-16)
-    (backend = :VariableElimination, seconds = 0.0178, max_error = 0.0)
-    (backend = :BeliefPropagation, seconds = 0.0084, max_error = 0.0521)
+    (backend = :JunctionTree, seconds = 0.001, max_error = 2.22e-16)
+    (backend = :VariableElimination, seconds = 0.0187, max_error = 0.0)
+    (backend = :BeliefPropagation, seconds = 0.0044, max_error = 0.0521)
 
     (julia = "1.12.7", cpu = "apple-m1", threads = 1, repetitions = 3, statistic = "minimum after warm-up")
 

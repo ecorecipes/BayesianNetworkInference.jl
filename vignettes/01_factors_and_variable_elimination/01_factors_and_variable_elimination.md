@@ -241,7 +241,7 @@ p_dysp ≈ brute_force_marginal(fg, [:dysp])
 diag
 ```
 
-    InferenceDiagnostics([:asia, :tub, :xray, :lung, :smoke, :either, :bronc], 8, 7, 2)
+    InferenceDiagnostics([:asia, :tub, :xray, :lung, :smoke, :either, :bronc], 8, 7, 2, false)
 
 The largest intermediate factor had `diag.max_factor_size` entries and
 the induced width of the order was `diag.treewidth`; compare with the

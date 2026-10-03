@@ -32,7 +32,10 @@ variable or a vector, in which case the joint posterior is used, so that
 
 The posterior comes from [`infer`](@ref), so the evidence semantics are the
 model-level ones: the evidence recorded by `observe` merged with the explicit
-`evidence`.
+`evidence`. So is the rule for tolerated entries in `[-atol, 0)`: on the model method a
+posterior is indeterminate (`BayesianNetworks.IndeterminatePosteriorError`) exactly when the
+model-level `infer` finds it so, here and in [`mutual_information`](@ref),
+[`sensitivity`](@ref) and [`tornado`](@ref).
 
 ```jldoctest
 julia> using BayesianNetworks
@@ -52,11 +55,14 @@ function entropy(fg::FactorGraph, x::Symbol; kwargs...)
     return entropy(fg, [x]; kwargs...)
 end
 function entropy(m::BayesModel, x::AbstractVector{Symbol}; evidence=Dict{Symbol,Symbol}(),
+                 backend::InferenceBackend=VariableElimination(),
                  atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
     fg = compile(m; atol=atol)
     ev = _model_evidence(m, evidence)
     _check_labels(m, x, ev)
-    return entropy(fg, x; evidence=ev, kwargs...)
+    return _under_tolerance(fg, ev, _tolerance_budget(fg, atol), backend) do
+        return entropy(fg, x; evidence=ev, backend, kwargs...)
+    end
 end
 entropy(m::BayesModel, x::Symbol; kwargs...) = entropy(m, [x]; kwargs...)
 
@@ -96,17 +102,23 @@ function mutual_information(fg::FactorGraph, x::Symbol, y::Symbol;
     total = 0.0
     for i in axes(joint.table, 1), j in axes(joint.table, 2)
         p = joint.table[i, j]
-        p > 0 && (total += p * log(p / (px[i] * py[j])))
+        # A positive cell has positive marginals unless a cell is negative, which only a
+        # model's prior can return (tolerance included); such a term is skipped, as
+        # `entropy` skips a cell that is not positive.
+        p > 0 && px[i] > 0 && py[j] > 0 && (total += p * log(p / (px[i] * py[j])))
     end
     return max(total / log(base), 0.0)
 end
 function mutual_information(m::BayesModel, x::Symbol, y::Symbol;
                             evidence=Dict{Symbol,Symbol}(),
+                            backend::InferenceBackend=VariableElimination(),
                             atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
     fg = compile(m; atol=atol)
     ev = _model_evidence(m, evidence)
     _check_labels(m, (x, y), ev)
-    return mutual_information(fg, x, y; evidence=ev, kwargs...)
+    return _under_tolerance(fg, ev, _tolerance_budget(fg, atol), backend) do
+        return mutual_information(fg, x, y; evidence=ev, backend, kwargs...)
+    end
 end
 
 """
@@ -163,11 +175,15 @@ function sensitivity(fg::FactorGraph, target::Symbol;
 end
 function sensitivity(m::BayesModel, target::Symbol; evidence=Dict{Symbol,Symbol}(),
                      variables::Union{Nothing,AbstractVector{Symbol}}=nothing,
+                     backend::InferenceBackend=VariableElimination(),
                      atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
     fg = compile(m; atol=atol)
     ev = _model_evidence(m, evidence)
     _check_labels(m, variables === nothing ? [target] : vcat(target, variables), ev)
-    return sensitivity(fg, target; evidence=ev, variables, kwargs...)
+    # Every entropy and mutual information below conditions on the same evidence.
+    return _under_tolerance(fg, ev, _tolerance_budget(fg, atol), backend) do
+        return sensitivity(fg, target; evidence=ev, variables, backend, kwargs...)
+    end
 end
 
 """
@@ -193,7 +209,10 @@ impossible, `ImpossibleEvidenceError` is thrown rather than an empty table
 returned. On the model method an unknown `target` or listed variable is
 `BayesianNetworks.UnknownVariableError` and an unknown `state`
 `BayesianNetworks.UnknownStateError` (ADR 0015); on the factor-graph method they are
-[`ScopeError`](@ref) and `FiniteKernels`' `InvalidAxisError`.
+[`ScopeError`](@ref) and `FiniteKernels`' `InvalidAxisError`. The model method asks for the
+base query and every finding, whose mass can be far smaller than the evidence's, under the
+rule for tolerated entries of the model-level [`infer`](@ref), and raises
+`BayesianNetworks.IndeterminatePosteriorError` for one that is indeterminate.
 
 This is a sensitivity to findings, not to parameters: it does not perturb any
 CPT.
@@ -202,6 +221,14 @@ function tornado(fg::FactorGraph, target::Symbol, state::Symbol;
                  evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
                  variables::Union{Nothing,AbstractVector{Symbol}}=nothing,
                  backend::InferenceBackend=VariableElimination())
+    return _tornado(fg, target, state, evidence, variables, backend, nothing)
+end
+
+# `budget` is the model's tolerance budget (`_tolerance_budget`): the base query and every
+# finding, whose mass can be far smaller, are asked for under the rule for tolerated
+# entries; `nothing` on a factor graph, which has no tolerance.
+function _tornado(fg::FactorGraph, target::Symbol, state::Symbol, evidence, variables,
+                  backend::InferenceBackend, budget)
     haskey(fg.axes, target) ||
         throw(ScopeError(:tornado, "the target is not a variable of the factor graph",
                          [target]))
@@ -212,7 +239,9 @@ function tornado(fg::FactorGraph, target::Symbol, state::Symbol;
     # Impossible base evidence makes every finding impossible, and skipping them all would
     # answer, with an empty table, a question that has no answer. Query it once, so that
     # the skip below only ever drops findings that the evidence rules out.
-    infer(fg, [target]; evidence, backend)
+    _under_tolerance(fg, evidence, budget, backend) do
+        return infer(fg, [target]; evidence, backend)
+    end
     rows = NamedTuple{(:variable, :low, :high, :range, :low_state, :high_state),
                       Tuple{Symbol,Float64,Float64,Float64,Symbol,Symbol}}[]
     for v in candidates
@@ -221,7 +250,9 @@ function tornado(fg::FactorGraph, target::Symbol, state::Symbol;
         for label in fg.axes[v].labels
             ev = merge(Dict{Symbol,Symbol}(evidence), Dict(v => label))
             p = try
-                first(infer(fg, [target]; evidence=ev, backend)).table[k]
+                _under_tolerance(fg, ev, budget, backend) do
+                    return first(infer(fg, [target]; evidence=ev, backend)).table[k]
+                end
             catch e
                 e isa ImpossibleEvidenceError && continue   # impossible finding
                 rethrow()
@@ -239,10 +270,11 @@ end
 function tornado(m::BayesModel, target::Symbol, state::Symbol;
                  evidence=Dict{Symbol,Symbol}(),
                  variables::Union{Nothing,AbstractVector{Symbol}}=nothing,
-                 atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
+                 backend::InferenceBackend=VariableElimination(),
+                 atol::Real=BayesianNetworks.DEFAULT_ATOL)
     fg = compile(m; atol=atol)
     ev = _model_evidence(m, evidence)
     _check_labels(m, variables === nothing ? Symbol[] : variables, ev)
     _check_state(m, target, state)
-    return tornado(fg, target, state; evidence=ev, variables, kwargs...)
+    return _tornado(fg, target, state, ev, variables, backend, _tolerance_budget(fg, atol))
 end

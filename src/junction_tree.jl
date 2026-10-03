@@ -470,17 +470,42 @@ need no special treatment -- unlike the division-based architectures of
 and pay for it with more storage but fewer multiplications.
 
 Throws [`ScopeError`](@ref) for evidence on unknown variables and
-`FiniteKernels.InvalidAxisError` for a label a variable does not have.
+`FiniteKernels.InvalidAxisError` for a label a variable does not have. The beliefs have the
+graph's element type, so an integer or rational graph whose products or sums overflow that
+type raises [`FactorDomainError`](@ref) (see [`multiply`](@ref)); the posterior entry points
+built on calibration answer such a graph exactly instead.
 """
-function calibrate(fg::FactorGraph{T}, jt::CompiledJunctionTree;
-                   evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}()) where {T}
-    ev, potentials, constant, beliefs, n_messages = _calibrate(_Linear(), fg, jt, evidence,
+function calibrate(fg::FactorGraph, jt::CompiledJunctionTree;
+                   evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}())
+    return _calibrated(_Linear(), fg, jt, evidence)
+end
+
+# `calibrate` in the linear arithmetic `A`: unchecked for `calibrate` itself, and with the
+# trust test on every product, the mass's included, for a posterior (`_Trusted`). Integer
+# and rational masses are summed and multiplied in checked arithmetic (`_overflowed`).
+function _calibrated(A::_Linear, fg::FactorGraph{T}, jt::CompiledJunctionTree,
+                     evidence) where {T}
+    ev, potentials, constant, beliefs, n_messages = _calibrate(A, fg, jt, evidence,
                                                                :calibrate)
     mass = constant.table[]
     for r in jt.roots
-        mass *= sum(beliefs[r].table)
+        total = _total(beliefs[r], :calibrate)
+        total isa FactorDomainError && _overflowed(A, total)
+        mass = _scalar_product(A, mass, total)
     end
     return CalibratedJunctionTree{T}(jt, ev, potentials, beliefs, mass, n_messages)
+end
+
+function _scalar_product(A::_Linear, x, y)
+    p, overflow = _mul(promote(x, y)...)
+    overflow &&
+        _overflowed(A, _overflow(:calibrate, Symbol[], (), _exact(x) * _exact(y)))
+    return p
+end
+function _scalar_product(::_Trusted, x::T, y::T) where {T<:Base.IEEEFloat}
+    p = x * y
+    _lost(x, y, p) && _untrusted()
+    return p
 end
 function calibrate(fg::FactorGraph;
                    evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
@@ -497,9 +522,12 @@ cliques, the width of the decomposition, the number of entries of the largest
 clique belief (of the largest intermediate factor when `fallback` is true),
 the number of separator messages passed (`0` when `fallback` is true), and
 whether the query was answered by the variable-elimination fallback because
-no single clique contained it. `exact_fallback` is true when the binary64 evidence mass
-was not a normal positive number and the tree was recalibrated in exact arithmetic,
-each posterior cell correctly rounded (ADR 0014, ADR 0016).
+no single clique contained it. `exact_fallback` is true when the run was not
+trusted -- a binary64 evidence mass that was not a normal positive number, a product of
+nonzero values below `floatmin` on the way, or an integer or rational product, sum or
+quotient that overflowed its element type -- and the posterior was recomputed in exact
+arithmetic, each cell correctly rounded (ADR 0014, ADR 0016): by recalibrating the tree,
+or, for a query that no clique contains, by variable elimination's own exact fallback.
 
 [`infer`](@ref) with the [`JunctionTree`](@ref) backend always returns this
 type, so the diagnostics of a query that falls back can be told from the
@@ -570,15 +598,11 @@ function _exact_calibration(fg::FactorGraph, jt::CompiledJunctionTree, evidence)
     return beliefs, n_messages
 end
 
+# Reached only for a query that one clique contains: a query spanning cliques goes to
+# `variable_elimination`, which resolves its own untrusted runs (`_infer_binary64`).
 function _exact_junction_tree_query(backend::JunctionTree, fg::FactorGraph, query, evidence)
     jt = build_junction_tree(fg; order=backend.order)
     c = _containing_clique(jt, fg.axes, query)
-    if c === nothing
-        f, ve = _exact_variable_elimination(fg, query, evidence, backend.order)
-        return f,
-               JunctionTreeDiagnostics(0, length(jt), jt.treewidth, ve.max_factor_size, 0,
-                                       true, true)
-    end
     beliefs, n_messages = _exact_calibration(fg, jt, evidence)
     largest = maximum(b -> length(b.factor), beliefs; init=0)
     return _belief_marginal(_Dyadic(), beliefs[c], query, evidence),
@@ -605,15 +629,26 @@ function _infer_binary64(backend::JunctionTree, fg::FactorGraph{T}, query,
     c = _containing_clique(jt, fg.axes, query)
     if c === nothing
         @warn "JunctionTree: the query $(collect(query)) does not lie in one clique; falling back to variable elimination"
-        f, ve = variable_elimination(fg, query; evidence, order=backend.order)
+        # `variable_elimination` resolves its own untrusted runs, and says whether it did.
+        f, ve = variable_elimination(fg, query; evidence,
+                                     order=_keeping(backend.order, query))
         return f,
                JunctionTreeDiagnostics(0, length(jt), jt.treewidth, ve.max_factor_size, 0,
-                                       true)
+                                       true, ve.exact_fallback)
     end
-    cal = calibrate(fg, jt; evidence)
+    cal = _calibrated(_Trusted(), fg, jt, evidence)
     _require_evidence_mass(cal.evidence_probability, evidence)
-    return _belief_marginal(_Linear(), cal.beliefs[c], query, evidence),
+    return _belief_marginal(_Trusted(), cal.beliefs[c], query, evidence),
            _diagnostics(cal, c)
+end
+
+# The elimination order of a junction tree's strategy for a query that variable elimination
+# answers instead. A tree's `UserOrder` lists every variable of the graph, as
+# `build_junction_tree` requires, but variable elimination keeps the query, so the query is
+# taken out of it and the rest keep the user's order.
+_keeping(strategy::EliminationStrategy, query) = strategy
+function _keeping(strategy::UserOrder, query)
+    return UserOrder([v for v in strategy.vars if !(v in query)])
 end
 
 """
@@ -635,9 +670,10 @@ end
 
 function _clique_beliefs(backend::JunctionTree, fg::FactorGraph, evidence)
     ordinary = function ()
-        cal = calibrate(fg, build_junction_tree(fg; order=backend.order); evidence)
+        cal = _calibrated(_Trusted(), fg, build_junction_tree(fg; order=backend.order),
+                          evidence)
         _require_evidence_mass(cal.evidence_probability, evidence)
-        return [_normalized(_Linear(), belief, evidence) for belief in cal.beliefs]
+        return [_normalized(_Trusted(), belief, evidence) for belief in cal.beliefs]
     end
     return _resolving_mass(ordinary, evidence) do
         beliefs, _ = _exact_calibration(fg, build_junction_tree(fg; order=backend.order),
@@ -659,6 +695,13 @@ its variable; with [`BeliefPropagation`](@ref) one run of
 factor graph, approximate otherwise); with [`VariableElimination`](@ref) each
 marginal is a separate [`variable_elimination`](@ref) run, which is the
 oracle the other two are tested against.
+
+The marginals have the element type of [`infer`](@ref)'s posteriors on `fg`. When the
+exact backends do not trust a run (see [`variable_elimination`](@ref)), every marginal is
+recomputed in exact arithmetic and returned as a correctly rounded `Factor{Float64}`, as
+`infer` returns that posterior: the junction tree recalibrates exactly, and variable
+elimination recomputes every marginal exactly as soon as one of its runs is untrusted, so
+the dictionary never mixes the two.
 """
 function all_marginals(fg::FactorGraph;
                        evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
@@ -677,24 +720,30 @@ end
 function _all_marginals_binary64(backend::JunctionTree, fg::FactorGraph{T},
                                  evidence) where {T}
     jt = build_junction_tree(fg; order=backend.order)
-    cal = calibrate(fg, jt; evidence)
+    cal = _calibrated(_Trusted(), fg, jt, evidence)
     _require_evidence_mass(cal.evidence_probability, evidence)
     return _collect_marginals(fg, evidence, _division_type(T)) do v
-        return _belief_marginal(_Linear(), cal.beliefs[jt.home[v]], [v], evidence)
+        return _belief_marginal(_Trusted(), cal.beliefs[jt.home[v]], [v], evidence)
     end
 end
 
+# One variable-elimination run per marginal, all in the graph's arithmetic or, as soon as one
+# of them is not trusted, all in exact arithmetic (review of 2026-10-02, finding 4): the
+# exact marginals are `Factor{Float64}`, as `infer` returns them, and a dictionary of the
+# graph's division type could not hold them.
 function _all_marginals(backend::VariableElimination, fg::FactorGraph{T},
                         evidence) where {T}
-    if all(v -> haskey(evidence, v), keys(fg.axes))
-        mass = variable_elimination(fg, Symbol[]; evidence, order=backend.order)[1].table[]
-        _resolving_mass(() -> _require_evidence_mass(mass, evidence), evidence) do
-            _exactly_impossible(fg, evidence, backend.order) && _impossible(evidence)
-            return nothing
+    all(v -> haskey(evidence, v), keys(fg.axes)) &&
+        _require_feasible(fg, evidence, backend.order)
+    ordinary = function ()
+        return _collect_marginals(fg, evidence, _division_type(T)) do v
+            return first(_variable_elimination(fg, [v], evidence, backend.order, nothing))
         end
     end
-    return _collect_marginals(fg, evidence, _division_type(T)) do v
-        return first(variable_elimination(fg, [v]; evidence, order=backend.order))
+    return _resolving_mass(ordinary, evidence) do
+        return _collect_marginals(fg, evidence, Float64) do v
+            return first(_exact_variable_elimination(fg, [v], evidence, backend.order))
+        end
     end
 end
 

@@ -48,8 +48,10 @@ Inputs must be finite nonnegative Float64 factors: another entry raises
 [`TraceLimitError`](@ref). `max_entries` caps copied trace cells
 (`TraceLimitError` when exceeded); input/query errors and impossible nonempty
 conditionals retain the ordinary API behavior. The v1 profile records binary64
-execution, so a query whose evidence mass underflows raises `TraceLimitError`
-rather than falling back to exact arithmetic as `variable_elimination` does. A trace is not itself a proof: an independent exact
+execution, so a query whose binary64 run is not trusted -- its evidence mass is not a
+normal positive number, or a product of nonzero values fell below `floatmin` -- raises
+`TraceLimitError` rather than falling back to exact arithmetic as `variable_elimination`
+does. A trace is not itself a proof: an independent exact
 consumer may reject numerical drift or nonfinite intermediates. Model-level
 capture starts after [`compile`](@ref), so it does not certify the compiler or
 source-CPT transcription. Metadata is descriptive, not installation attestation.
@@ -83,15 +85,16 @@ function trace_variable_elimination(fg::FactorGraph{Float64}, query::AbstractVec
     recorder = _VETraceRecorder(data, Int(max_entries))
     data["inputs"] = [_trace_factor!(recorder, factor) for factor in fg.factors]
     # The v1 profile records binary64 execution, so it cannot fall back to exact arithmetic.
-    # An exact zero mass is impossible evidence; a mass that underflowed cannot form this
-    # posterior in binary64 at all, and is reported as a trace limit.
+    # An exact zero mass is impossible evidence; a run that underflowed (its mass, or a
+    # product of nonzero values on the way) cannot form this posterior in binary64, and is
+    # reported as a trace limit.
     result, diagnostics = try
         _variable_elimination(fg, query, evidence, order, recorder)
     catch e
         e isa _UnresolvedMass || rethrow()
         _exactly_impossible(fg, evidence, order) && _impossible(evidence)
         throw(TraceLimitError(:trace_variable_elimination, :evidence_underflow,
-                              "the binary64 evidence mass underflowed, and the v1 trace profile records binary64 execution; use LogVariableElimination for this posterior",
+                              "the binary64 run underflowed (its evidence mass is not a normal positive number, or a product of nonzero values fell below floatmin), and the v1 trace profile records binary64 execution; variable_elimination answers this posterior in exact arithmetic",
                               collect(Symbol, query)))
     end
     return result, diagnostics, data

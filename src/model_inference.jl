@@ -37,20 +37,54 @@ function _check_state(m::BayesModel, x::Symbol, s::Symbol)
     return nothing
 end
 
-# The tolerance budget (ADR 0014, and BayesianNetworks' `marginal`): a validated model may
-# hold entries in [-atol, 0), and when it does, evidence whose mass is within the budget
-# (1 + atol)^n - 1 of zero leaves the posterior's sign to the rounding. Only the model-level
-# entry points know `atol`, so they check it; the check costs one elimination and runs only
-# for a model with a negative entry.
-function _check_tolerance_budget(fg::FactorGraph, ev::AbstractDict, atol::Real)
-    isempty(ev) && return nothing
+# Tolerated entries at the model level: the rule BayesianNetworks' `marginal`,
+# InfluenceDiagrams and this package share (variable_elimination.jl, ADR 0014 decision 4,
+# ADR 0016 decision 4). A validated model may hold entries in [-atol, 0). One takes part in a
+# posterior when it lies on a configuration consistent with the evidence whose other entries
+# are all nonzero; then the posterior is indeterminate if the evidence mass is not larger
+# than the budget (1 + atol)^n - 1 (`n` mechanisms), or if a cell of the queried posterior is
+# negative. A prior is exempt. Only the model-level entry points know `atol`, so every one of
+# them asks for each posterior through `_under_tolerance`, once per evidence set it
+# conditions on (each case of `predict` and `evaluate`, each finding of `tornado`), and so
+# raises exactly when `marginal` does on the same model and evidence.
+#
+# The cost: `_tolerance_budget`, computed once per call, is `nothing` for a model with no
+# negative entry, and then the rule is skipped whole. Otherwise whether an entry takes part
+# is one support elimination over the backend's schedule (`_takes_part`), and only when one
+# does is the evidence mass computed, by one binary64 elimination. Belief propagation
+# computes no evidence mass and runs exact inference only on request (ADR 0011), so with it
+# the budget is checked only under `check_evidence = true`; its negative cells still are.
+function _tolerance_budget(fg::FactorGraph, atol::Real)
     any(f -> any(<(0), f.table), fg.factors) || return nothing
-    mass = variable_elimination(fg, Symbol[]; evidence=ev)[1].table[]
-    budget = BayesianNetworks._joint_atol(atol, length(fg.factors))
+    return BayesianNetworks._joint_atol(atol, length(fg.factors))
+end
+
+# `query()`, a posterior under `ev` from `backend`, under the rule.
+function _under_tolerance(query, fg::FactorGraph, ev::AbstractDict, budget,
+                          backend::InferenceBackend)
+    budget === nothing && return query()
+    _check_tolerance_budget(fg, ev, budget, backend)
+    return Base.ScopedValues.with(query, _MODEL_QUERY => _ModelQuery(isempty(ev)))
+end
+
+function _check_tolerance_budget(fg::FactorGraph, ev::AbstractDict, budget,
+                                 backend::InferenceBackend)
+    (budget === nothing || isempty(ev) || !_certifies_evidence(backend)) && return nothing
+    order = _schedule(backend)
+    _takes_part(fg, ev, order) || return nothing
+    mass = variable_elimination(fg, Symbol[]; evidence=ev, order)[1].table[]
     (isfinite(mass) && mass > budget) && return nothing
     return throw(IndeterminatePosteriorError(Dict{Symbol,Symbol}(ev),
                                              "the evidence mass $(mass) is within the tolerance budget $(budget) of zero"))
 end
+
+_certifies_evidence(::InferenceBackend) = true
+_certifies_evidence(backend::BeliefPropagation) = backend.check_evidence
+
+const _OrderedBackend = Union{VariableElimination,JunctionTree,LogVariableElimination,
+                              LogJunctionTree}
+_schedule(backend::_OrderedBackend) = backend.order
+_schedule(::InferenceBackend) = MinFill()
 
 """
     infer(m::BayesModel, query; evidence=Dict{Symbol,Symbol}(), backend=VariableElimination(), atol=DEFAULT_ATOL)
@@ -82,8 +116,15 @@ variable that also carries evidence, and `BayesianNetworks.ImpossibleEvidenceErr
 non-empty query when the evidence has probability exactly zero, as
 `BayesianNetworks.marginal` does. Evidence whose binary64 mass underflows is
 answered by the exact fallback, each cell correctly rounded (ADR 0014, ADR 0016). When the model holds tolerated
-entries in `[-atol, 0)` and the evidence mass is within the tolerance budget
-`(1 + atol)^n - 1` of zero, `BayesianNetworks.IndeterminatePosteriorError` is raised.
+entries in `[-atol, 0)`, one of them lies on a configuration consistent with the evidence
+whose other entries are all nonzero, and either the evidence mass is within the tolerance
+budget `(1 + atol)^n - 1` of zero or a cell of the posterior is negative,
+`BayesianNetworks.IndeterminatePosteriorError` is raised, exactly as
+`BayesianNetworks.marginal` does; a prior (no evidence) is exempt, and every model-level
+entry point applies the same rule. It costs nothing for a model with no negative entry, and
+otherwise one Boolean elimination, plus one elimination of the evidence mass when an entry
+takes part. With [`BeliefPropagation`](@ref) the budget is checked only under
+`check_evidence = true`, the opt-in that certifies the evidence at exact cost.
 
 ```jldoctest
 julia> using BayesianNetworks
@@ -113,8 +154,10 @@ function infer(m::BayesModel, query::AbstractVector{Symbol};
     ev = _model_evidence(m, evidence)
     _check_labels(m, query, ev)
     # An empty query returns the unnormalised mass (ADR 0011), which may be tiny or negative.
-    isempty(query) || _check_tolerance_budget(fg, ev, atol)
-    return infer(fg, query; evidence=ev, backend)
+    isempty(query) && return infer(fg, query; evidence=ev, backend)
+    return _under_tolerance(fg, ev, _tolerance_budget(fg, atol), backend) do
+        return infer(fg, query; evidence=ev, backend)
+    end
 end
 infer(m::BayesModel, query::Symbol; kwargs...) = infer(m, [query]; kwargs...)
 
@@ -160,8 +203,9 @@ function all_marginals(m::BayesModel; evidence=Dict{Symbol,Symbol}(),
     fg = compile(m; atol=atol)
     ev = _model_evidence(m, evidence)
     _check_labels(m, Symbol[], ev)
-    _check_tolerance_budget(fg, ev, atol)
-    return all_marginals(fg; evidence=ev, backend)
+    return _under_tolerance(fg, ev, _tolerance_budget(fg, atol), backend) do
+        return all_marginals(fg; evidence=ev, backend)
+    end
 end
 
 """

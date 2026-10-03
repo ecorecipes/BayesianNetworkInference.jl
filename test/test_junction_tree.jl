@@ -326,6 +326,35 @@ end
     @test normalize(empty_scope).table isa AbstractArray{Float64,0}
 end
 
+# Review of 2026-10-01, finding 4: a query that no clique contains is answered by variable
+# elimination. That fallback rejected every `UserOrder` (the tree's order lists the query
+# variables, which variable elimination keeps), and its exact fallback was dropped from the
+# diagnostics.
+@testset "queries spanning cliques" begin
+    a = FiniteAxis(:A, [:x, :y])
+    b = FiniteAxis(:B, [:x, :y])
+    c = FiniteAxis(:C, [:x, :y])
+    fg = FactorGraph([Factor([a, b], [0.2 0.8; 0.6 0.4]),
+                      Factor([b, c], [0.3 0.7; 0.9 0.1])])
+    want = first(infer(fg, [:A, :C]))
+    for order in (UserOrder([:A, :B, :C]), UserOrder([:C, :B, :A]), MinFill())
+        p, d = with_logger(NullLogger()) do
+            return infer(fg, [:A, :C]; backend=JunctionTree(; order))
+        end
+        @test d.fallback && !d.exact_fallback
+        @test p ≈ want
+    end
+    # Every product is 1e-400, which binary64 rounds to zero: the fallback is exact, and the
+    # diagnostics say so.
+    tiny = FactorGraph([Factor([a, b], fill(1e-200, 2, 2)),
+                        Factor([b, c], fill(1e-200, 2, 2))])
+    q, dq = with_logger(NullLogger()) do
+        return infer(tiny, [:A, :C]; backend=JunctionTree())
+    end
+    @test dq.fallback && dq.exact_fallback
+    @test q.table == fill(0.25, 2, 2)
+end
+
 @testset "junction-tree validation (Lean Good and checkAssignment)" begin
     check = BayesianNetworkInference._check_junction_tree
     check_compiled(jt, fg) = check(jt.cliques, jt.separators, jt.parent, jt.children,
@@ -434,4 +463,39 @@ end
     scalar = FactorGraph([Factor(Symbol[], FiniteAxis[], fill(0.5))])
     @test build_junction_tree(scalar).assignment == [0]
     @test check_compiled(build_junction_tree(scalar), scalar) === nothing
+end
+
+# Review of 2026-10-02, finding 3: the product of an empty factor list was the Float64 unit,
+# so calibrating a graph of another element type crashed ("Cannot convert Factor{Float64}
+# to Factor{Float32}") whenever a clique got no factor -- as cliques 10, 19 and 20 of a 5 x 5
+# pairwise grid do under MinFill. Int, Rational{Int} and BigFloat graphs failed the same way.
+@testset "a clique without factors has the graph's element type" begin
+    function grid(T)
+        ax = Dict((i, j) => FiniteAxis(Symbol("V", i, "_", j), [:s0, :s1])
+                  for i in 1:5, j in 1:5)
+        fs = Factor{T}[]
+        for i in 1:5, j in 1:5
+            i < 5 && push!(fs, Factor([ax[(i, j)], ax[(i + 1, j)]], T[1 1; 1 2]))
+            j < 5 && push!(fs, Factor([ax[(i, j)], ax[(i, j + 1)]], T[2 1; 1 1]))
+        end
+        return FactorGraph(fs)
+    end
+    reference = all_marginals(grid(Float64))
+    jt = build_junction_tree(grid(Float64))
+    @test any(c -> !(c in jt.assignment), 1:length(jt))
+    for T in (Float32, Int, Rational{Int}, BigFloat)
+        g = grid(T)
+        ms = all_marginals(g)
+        @test valtype(ms) == Factor{BayesianNetworkInference._division_type(T)}
+        @test all(v -> isapprox(Float64.(ms[v].table), reference[v].table; rtol=1e-5),
+                  keys(reference))
+        @test length(clique_beliefs(g)) == length(jt)
+        @test isapprox(Float64.(first(infer(g, :V3_3; backend=JunctionTree())).table),
+                       reference[:V3_3].table; rtol=1e-5)
+    end
+    # The exact element types are exact: the junction tree on Rational{Int} against
+    # variable elimination on Rational{BigInt}.
+    exact = grid(Rational{BigInt})
+    rational = all_marginals(grid(Rational{Int}))
+    @test all(v -> rational[v].table == first(infer(exact, v)).table, [:V1_1, :V3_3, :V5_2])
 end

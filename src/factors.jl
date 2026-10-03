@@ -202,16 +202,183 @@ function _result_strides(h::Factor, vars::Vector{Symbol})
     return out
 end
 
-# out[i] = a[.] * b[.] over the result's joint states, walking an odometer over `sz`.
-function _product_into!(out::Vector{T}, sz::Vector{Int}, a::Vector{S}, as::Vector{Int},
-                        b::Vector{U}, bs::Vector{Int}) where {T,S,U}
-    d = length(sz)
+# Checked arithmetic (review of 2026-10-02, finding 1)
+# ----------------------------------------------------
+#
+# Base's machine integers wrap silently when a product or a sum overflows, and its
+# rationals of them throw `OverflowError`. Tables of those element types are therefore
+# computed in checked arithmetic: `multiply`, `marginalize` and `normalize` give each
+# product, sum and quotient its exact value, or report the first cell whose exact value the
+# element type cannot hold, as a `FactorDomainError` whose backend is the operation and
+# whose value is that exact value. They never wrap. The internal forms (`_product`,
+# `_marginal`, `_normalize`, `_total`) return the error instead of throwing it, so that a
+# posterior run can recompute in exact arithmetic instead (`_overflowed`, arithmetic.jl).
+# Floating-point types, `Bool`, `BigInt` and rationals of `BigInt` are not checked: they do
+# not wrap, and a float that overflows to infinity is a non-finite mass, which the trust
+# test of the posterior runs already catches.
+_checked(::Type) = false
+_checked(::Type{<:Base.BitInteger}) = true
+_checked(::Type{<:Rational{<:Base.BitInteger}}) = true
+
+# `(x * y, overflowed)`. A rational product is formed exactly in the widened integer type,
+# where two factors of the narrow one cannot overflow, and is Base's product (the same
+# reduced fraction) whenever it fits.
+@inline _mul(x, y) = (x * y, false)
+@inline _mul(x::T, y::T) where {T<:Base.BitInteger} = Base.Checked.mul_with_overflow(x, y)
+function _mul(x::Rational{T}, y::Rational{T}) where {T<:Base.BitInteger}
+    W = Rational{widen(T)}
+    p = convert(W, x) * convert(W, y)
+    _fits(Rational{T}, p) || return zero(Rational{T}), true
+    return convert(Rational{T}, p), false
+end
+
+# The exact value of an integer or rational entry, for the error that reports it.
+_exact(x::Integer) = BigInt(x)
+_exact(x::Rational) = Rational{BigInt}(x)
+
+# Whether the exact value `x` is a value of the element type `T`.
+_fits(::Type{T}, x::Integer) where {T<:Base.BitInteger} = typemin(T) <= x <= typemax(T)
+_fits(::Type{Rational{T}}, x::Integer) where {T} = typemin(T) <= x <= typemax(T)
+function _fits(::Type{Rational{T}}, x::Rational) where {T}
+    return typemin(T) <= numerator(x) <= typemax(T) && denominator(x) <= typemax(T)
+end
+
+# The element type of a sum of entries of type `T` (Base's `sum` widens the small
+# integers to `Int`), and an entry's value in a type in which such a sum is exact.
+_sum_type(::Type{T}) where {T} = typeof(Base.add_sum(zero(T), zero(T)))
+_widened(::Type{R}, x) where {R<:Base.BitInteger} = widen(convert(R, x))
+_widened(::Type{<:Rational}, x) = Rational{BigInt}(x)
+
+# The overflow report of `operation` at `index` (in the scope `vars`) whose exact value is
+# `value`; an empty `index` with a nonempty scope is the total of the factor over `vars`.
+function _overflow(operation::Symbol, vars::Vector{Symbol}, index::Tuple, value)
+    return FactorDomainError(operation, copy(vars), index, value)
+end
+
+# The walk of `_product_into!`, prepared: the result axes with both operands' strides,
+# after dropping axes of size one (they never move an offset) and merging each axis into
+# the one before it when both operands step through the pair contiguously
+# (`as[k + 1] == as[k] * sz[k]`, and the same for `bs`; zero strides merge too). A merged
+# axis keeps the column-major order of the result's cells and each cell's offset in both
+# operands, so the walk reads the same pairs in the same order with fewer, longer runs.
+function _merged_axes(sz::Vector{Int}, as::Vector{Int}, bs::Vector{Int})
+    msz = Int[]
+    mas = Int[]
+    mbs = Int[]
+    for k in eachindex(sz)
+        sz[k] == 1 && continue
+        if !isempty(msz) && as[k] == mas[end] * msz[end] && bs[k] == mbs[end] * msz[end]
+            msz[end] *= sz[k]
+        else
+            push!(msz, sz[k])
+            push!(mas, as[k])
+            push!(mbs, bs[k])
+        end
+    end
+    return msz, mas, mbs
+end
+
+# The two innermost (merged) axes of the walk as plain loops:
+# `out[o + j*n + i + 1] = a[ai + i*sa + j*ta] * b[bi + i*sb + j*tb]` for `i < n`, `j < m`,
+# in that order. The layouts that the products of elimination and calibration mostly have
+# -- both operands contiguous, or one of them constant, along the innermost axis -- get loops
+# of their own, which vectorise. Returns whether a product overflowed (`_mul`).
+@inline function _product_block!(out::Vector, o::Int, a::Vector, ai::Int, sa::Int, ta::Int,
+                                 b::Vector, bi::Int, sb::Int, tb::Int, n::Int, m::Int)
+    overflow = false
+    if sa == 1 && sb == 1
+        @inbounds for j in 0:(m - 1)
+            oj, aj, bj = o + j * n, ai + j * ta, bi + j * tb
+            @simd for i in 0:(n - 1)
+                p, v = _mul(a[aj + i], b[bj + i])
+                out[oj + 1 + i] = p
+                overflow |= v
+            end
+        end
+    elseif sa == 1 && sb == 0
+        @inbounds for j in 0:(m - 1)
+            oj, aj, y = o + j * n, ai + j * ta, b[bi + j * tb]
+            @simd for i in 0:(n - 1)
+                p, v = _mul(a[aj + i], y)
+                out[oj + 1 + i] = p
+                overflow |= v
+            end
+        end
+    elseif sa == 0 && sb == 1
+        @inbounds for j in 0:(m - 1)
+            oj, x, bj = o + j * n, a[ai + j * ta], bi + j * tb
+            @simd for i in 0:(n - 1)
+                p, v = _mul(x, b[bj + i])
+                out[oj + 1 + i] = p
+                overflow |= v
+            end
+        end
+    else
+        @inbounds for j in 0:(m - 1)
+            oj, aj, bj = o + j * n, ai + j * ta, bi + j * tb
+            @simd for i in 0:(n - 1)
+                p, v = _mul(a[aj + i * sa], b[bj + i * sb])
+                out[oj + 1 + i] = p
+                overflow |= v
+            end
+        end
+    end
+    return overflow
+end
+
+# out[i] = a[.] * b[.] over the result's joint states in column-major order, with an
+# odometer over `sz` and the strides `as`, `bs` of `_result_strides` (modelled in
+# `FiniteKernels.jl/proofs/FiniteKernelsProofs/Layout/Product.lean`: `bump`,
+# `productLoop`, `productInto_eq`). The axes are merged first (`_merged_axes`) and the two
+# innermost ones run as loops (`_product_block!`); the odometer turns the rest. Every cell
+# is still the one product `a[ai] * b[bi]` at its own two offsets, written once, so the table
+# is the same, bit for bit. Returns whether a product overflowed an integer or rational
+# element type (`_mul`), in which case `out` is not the product.
+function _product_into!(out::Vector, sz::Vector{Int}, a::Vector, as::Vector{Int},
+                        b::Vector, bs::Vector{Int})
+    msz, mas, mbs = _merged_axes(sz, as, bs)
+    d = length(msz)
+    d == 0 && return _product_block!(out, 0, a, 1, 0, 0, b, 1, 0, 0, 1, 1)
+    n, sa, sb = msz[1], mas[1], mbs[1]
+    m, ta, tb = d >= 2 ? (msz[2], mas[2], mbs[2]) : (1, 0, 0)
+    block = n * m
     pos = zeros(Int, d)
     ai = 1
     bi = 1
-    @inbounds for i in eachindex(out)
-        out[i] = a[ai] * b[bi]
-        for k in 1:d
+    o = 0
+    overflow = false
+    @inbounds while true
+        overflow |= _product_block!(out, o, a, ai, sa, ta, b, bi, sb, tb, n, m)
+        o += block
+        k = 3
+        while k <= d
+            pos[k] += 1
+            ai += mas[k]
+            bi += mbs[k]
+            pos[k] < msz[k] && break
+            pos[k] = 0
+            ai -= mas[k] * msz[k]
+            bi -= mbs[k] * msz[k]
+            k += 1
+        end
+        k > d && return overflow
+    end
+end
+
+# The first cell of the product whose exact value its element type cannot hold, found by
+# walking the cells in order when `_product_into!` reported an overflow; `nothing` if none
+# does (`_mul` is a pure function, so this walk's verdict is the kernel's).
+function _product_overflow(vars, sz::Vector{Int}, a::Vector, as::Vector{Int}, b::Vector,
+                           bs::Vector{Int})
+    pos = zeros(Int, length(sz))
+    ai = 1
+    bi = 1
+    for i in 1:prod(sz)
+        if last(_mul(a[ai], b[bi]))
+            index = Tuple(CartesianIndices(Tuple(sz))[i])
+            return _overflow(:multiply, vars, index, _exact(a[ai]) * _exact(b[bi]))
+        end
+        for k in eachindex(sz)
             pos[k] += 1
             ai += as[k]
             bi += bs[k]
@@ -220,6 +387,22 @@ function _product_into!(out::Vector{T}, sz::Vector{Int}, a::Vector{S}, as::Vecto
             ai -= as[k] * sz[k]
             bi -= bs[k] * sz[k]
         end
+    end
+    return nothing
+end
+
+# An operand's flat table in the result's element type `T`. Only a checked `T` converts,
+# exactly, or reporting an entry that `T` cannot hold (a negative integer multiplied by an
+# unsigned one, say); otherwise the kernel promotes each pair of entries as `*` does.
+_operand(::Type{T}, f::Factor{T}) where {T} = vec(f.table)
+_operand(::Type{T}, f::Factor) where {T} = _checked(T) ? _converted(T, f) : vec(f.table)
+function _converted(::Type{T}, f::Factor) where {T}
+    t = vec(f.table)
+    out = Vector{T}(undef, length(t))
+    for i in eachindex(t)
+        _fits(T, t[i]) || return _overflow(:multiply, f.vars,
+                                           Tuple(CartesianIndices(size(f.table))[i]), t[i])
+        out[i] = convert(T, t[i])
     end
     return out
 end
@@ -233,26 +416,51 @@ Pointwise product. The scope of the result is `f.vars` followed by the
 variables of `g` not already present, so multiplication is commutative modulo
 axis order. Shared variables must carry identical axes ([`ShapeError`](@ref)
 otherwise). The element type is the promotion of the two element types.
+
+Integer and rational element types are multiplied in checked arithmetic: a product
+that the element type cannot hold is a [`FactorDomainError`](@ref) with backend
+`:multiply`, naming the cell of the result and the product's exact value, never a
+wrapped integer. Use a wider type (`Float64`, `BigInt`, `Rational{BigInt}`) for such
+tables.
 """
-function multiply(f::Factor{S}, g::Factor{U}) where {S,U}
-    vars, axes = _union_axes(f, g, :multiply)
-    sz = Int[length(a) for a in axes]
-    T = promote_type(S, U)
-    table = Array{T}(undef, Tuple(sz))
-    isempty(table) ||
-        _product_into!(vec(table), sz, vec(f.table), _result_strides(f, vars),
-                       vec(g.table), _result_strides(g, vars))
-    return _factor(vars, axes, table)
+function multiply(f::Factor, g::Factor)
+    p = _product(f, g)
+    p isa FactorDomainError && throw(p)
+    return p
 end
 multiply(f::Factor) = f
 function multiply(f::Factor, g::Factor, h::Factor, hs::Factor...)
     return multiply(multiply(f, g), h, hs...)
 end
-function multiply(fs::AbstractVector{<:Factor})
-    isempty(fs) && return unit_factor()
+function multiply(fs::AbstractVector{F}) where {F<:Factor}
+    isempty(fs) && return unit_factor(_table_type(F))
     return reduce(multiply, fs)
 end
 Base.:*(f::Factor, g::Factor) = multiply(f, g)
+
+# The element type of a vector of factors (`Float64` when the vector does not fix one), so
+# that an empty product is the unit of the right type. (One method: Julia ranks
+# `::Type{<:Factor}` above `::Type{Factor{T}} where T` for `Factor{Float32}`.)
+_table_type(::Type{F}) where {F<:Factor} = F isa DataType ? eltype(F) : Float64
+
+# `multiply`, returning the `FactorDomainError` of a product that overflows an integer or
+# rational element type instead of throwing it.
+function _product(f::Factor{S}, g::Factor{U}) where {S,U}
+    vars, axes = _union_axes(f, g, :multiply)
+    T = promote_type(S, U)
+    a = _operand(T, f)
+    a isa FactorDomainError && return a
+    b = _operand(T, g)
+    b isa FactorDomainError && return b
+    sz = Int[length(x) for x in axes]
+    table = Array{T}(undef, Tuple(sz))
+    isempty(table) && return _factor(vars, axes, table)
+    as = _result_strides(f, vars)
+    bs = _result_strides(g, vars)
+    _product_into!(vec(table), sz, a, as, b, bs) || return _factor(vars, axes, table)
+    overflow = _product_overflow(vars, sz, a, as, b, bs)
+    return overflow === nothing ? _factor(vars, axes, table) : overflow
+end
 
 # Marginalisation and maximisation
 # --------------------------------
@@ -270,11 +478,48 @@ end
 
 Sum out `vars` (a vector of symbols, or one symbol); the remaining scope keeps
 its order. Throws [`ScopeError`](@ref) for variables outside the scope.
+
+Integer and rational element types are summed exactly: a sum that the element type
+of the result cannot hold is a [`FactorDomainError`](@ref) with backend
+`:marginalize`, naming the cell of the result and the sum's exact value, never a
+wrapped integer. (As with `sum`, the small integer types sum to `Int`.)
 """
 function marginalize(f::Factor, vars::AbstractVector{Symbol})
-    return _reduce_out(sum, :marginalize, f, vars)
+    r = _marginal(f, vars)
+    r isa FactorDomainError && throw(r)
+    return r
 end
 marginalize(f::Factor, var::Symbol) = marginalize(f, [var])
+
+# `marginalize`, returning the `FactorDomainError` of a sum that overflows an integer or
+# rational element type instead of throwing it. A checked sum is computed exactly, in a
+# widened type, and converted back once it is known to fit: Base's machine-integer sum is
+# exact modulo 2^n, and a rational sum is exact, so the result is Base's whenever Base's
+# would not wrap or throw.
+function _marginal(f::Factor{T}, vars) where {T}
+    _checked(T) || return _reduce_out(sum, :marginalize, f, vars)
+    isempty(vars) && return f
+    dims = Tuple(_positions(f, :marginalize, vars))
+    keep = setdiff(1:ndims(f), dims)
+    R = _sum_type(T)
+    wide = dropdims(sum(x -> _widened(R, x), f.table; dims=dims); dims=dims)
+    flat = vec(wide)
+    i = findfirst(x -> !_fits(R, x), flat)
+    i === nothing ||
+        return _overflow(:marginalize, f.vars[keep],
+                         Tuple(CartesianIndices(size(wide))[i]), flat[i])
+    return _factor(f.vars[keep], f.axes[keep], convert(Array{R}, wide))
+end
+
+# The sum of every entry of `f`: `sum(f.table)`, with the same check as `_marginal` for
+# an integer or rational element type, reported as `operation` at the empty index.
+function _total(f::Factor{T}, operation::Symbol) where {T}
+    _checked(T) || return sum(f.table)
+    R = _sum_type(T)
+    total = sum(x -> _widened(R, x), f.table)
+    _fits(R, total) || return _overflow(operation, f.vars, (), total)
+    return convert(R, total)
+end
 
 """
     maximize(f::Factor, vars) -> Factor
@@ -345,9 +590,21 @@ as `FiniteKernels` does for kernels.
 
 Posterior entry points never reach that error: they check the evidence mass
 first and throw `BayesianNetworks.ImpossibleEvidenceError` (ADR 0012).
+
+Integer and rational element types are summed and divided exactly: a total, or a
+rational quotient, that the element type cannot hold is a [`FactorDomainError`](@ref)
+with backend `:normalize` and the exact value.
 """
 function normalize(f::Factor)
-    s = sum(f.table)
+    p = _normalize(f)
+    p isa FactorDomainError && throw(p)
+    return p
+end
+
+# `normalize`, returning the `FactorDomainError` of an overflow instead of throwing it.
+function _normalize(f::Factor)
+    s = _total(f, :normalize)
+    s isa FactorDomainError && return s
     # `normalize` cannot report a deviation from one or a tolerance, so a zero total is an
     # `ArgumentError` rather than a `KernelNormalizationError` with fabricated numbers
     # (ADR 0007 for kernels, ADR 0012 for factors).
@@ -357,7 +614,25 @@ function normalize(f::Factor)
     # so divide in place: an empty-scope factor arises from any maximal clique that evidence
     # fully instantiates. The log-domain path already does this.
     table = similar(f.table, typeof(one(eltype(f.table)) / s))
+    return _quotients!(table, f, s)
+end
+
+# table .= f.table ./ s. A quotient of integers is a float and cannot overflow; one of
+# checked rationals is formed exactly and must fit.
+function _quotients!(table::Array, f::Factor, s)
     table .= f.table ./ s
+    return _factor(f.vars, f.axes, table)
+end
+function _quotients!(table::Array{Rational{T}}, f::Factor, s) where {T<:Base.BitInteger}
+    total = Rational{BigInt}(s)
+    t = vec(f.table)
+    out = vec(table)
+    for i in eachindex(t, out)
+        q = Rational{BigInt}(t[i]) / total
+        _fits(Rational{T}, q) ||
+            return _overflow(:normalize, f.vars, Tuple(CartesianIndices(size(table))[i]), q)
+        out[i] = convert(Rational{T}, q)
+    end
     return _factor(f.vars, f.axes, table)
 end
 

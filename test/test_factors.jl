@@ -235,3 +235,125 @@ end
     end
     @test compared >= 200
 end
+
+# Review of 2026-10-02, finding 5: the stride kernel merges axes and runs its two innermost
+# ones as loops, with paths of their own for contiguous and constant operands. Each cell is
+# still the one product of its two entries, so the result must equal an independent
+# reference bit for bit -- on permuted scopes, axes of size one, scalars and mixed element
+# types, which are the layouts the special paths separate.
+@testset "multiply equals the reference bit for bit on every layout" begin
+    function reference_multiply(f, g)
+        vars = copy(f.vars)
+        axes = copy(f.axes)
+        for (v, a) in zip(g.vars, g.axes)
+            v in vars || (push!(vars, v); push!(axes, a))
+        end
+        sz = Tuple(length(a) for a in axes)
+        out = Array{promote_type(eltype(f), eltype(g))}(undef, sz)
+        for ci in CartesianIndices(sz)
+            fi = CartesianIndex(Tuple(ci[findfirst(==(v), vars)] for v in f.vars))
+            gi = CartesianIndex(Tuple(ci[findfirst(==(v), vars)] for v in g.vars))
+            out[ci] = f.table[fi] * g.table[gi]
+        end
+        return vars, out
+    end
+    rng = MersenneTwister(20261002)
+    names = [:A, :B, :C, :D, :E, :F]
+    layouts = Dict(:contiguous => 0, :constant => 0, :strided => 0)
+    for trial in 1:600
+        card = Dict(n => rand(rng, [1, 1, 2, 3, 4, 7]) for n in names)
+        fv = shuffle(rng, randsubseq(rng, names, 0.5))
+        gv = shuffle(rng, randsubseq(rng, names, 0.5))
+        mk(vs) = FiniteAxis[FiniteAxis(v, [Symbol(v, i) for i in 1:card[v]]) for v in vs]
+        S, U = rand(rng,
+                    [(Float64, Float64), (Float64, Float64), (Float32, Float64),
+                     (Int, Float64), (Bool, Float64), (Float32, Float32)])
+        function draw(T, n)
+            return T === Bool ? rand(rng, Bool, n) :
+                   T === Int ? rand(rng, 0:9, n) :
+                   T.(rand(rng, n) .* 10.0 .^ rand(rng, -3:3, n))
+        end
+        fa, ga = mk(fv), mk(gv)
+        fsz, gsz = Tuple(length(a) for a in fa), Tuple(length(a) for a in ga)
+        f = Factor(fv, fa, reshape(draw(S, prod(fsz; init=1)), fsz))
+        g = Factor(gv, ga, reshape(draw(U, prod(gsz; init=1)), gsz))
+        want_vars, want = reference_multiply(f, g)
+        got = multiply(f, g)
+        @test got.vars == want_vars
+        @test eltype(got) == eltype(want)
+        @test isequal(got.table, want)
+        # Which inner path the walk takes, so that every one is known to be exercised.
+        BNI = BayesianNetworkInference
+        vars, axes = BNI._union_axes(f, g, :test)
+        sz = Int[length(a) for a in axes]
+        as, bs = BNI._result_strides(f, vars), BNI._result_strides(g, vars)
+        msz, mas, mbs = BNI._merged_axes(sz, as, bs)
+        if !isempty(msz)
+            key = mas[1] == mbs[1] == 1 ? :contiguous :
+                  (mas[1] == 0 || mbs[1] == 0) ? :constant : :strided
+            layouts[key] += 1
+        end
+    end
+    @test all(>(50), values(layouts))
+end
+
+# Review of 2026-10-02, finding 3: an empty product was the Float64 unit whatever the
+# factors' type.
+@testset "an empty product has the element type of its list" begin
+    @test multiply(Factor{Float32}[]) isa Factor{Float32}
+    @test multiply(Factor{Rational{Int}}[]).table[] === 1 // 1
+    @test multiply(Factor[]) == unit_factor()
+end
+
+# Review of 2026-10-02, finding 1: the kernel multiplied in Int arithmetic unchecked, so
+# integer tables wrapped silently (2^32 * 2^32 == 0), and `Rational{Int}` raised Base's
+# `OverflowError`. Integer and rational tables are now computed exactly or the cell is
+# reported, as a `FactorDomainError` naming the factor, the cell and the exact value.
+@testset "integer and rational tables never wrap" begin
+    x = FiniteAxis(:X, [:x1, :x2])
+    y = FiniteAxis(:Y, [:y1, :y2])
+    caught(f) =
+        try
+            f()
+            nothing
+        catch e
+            e
+        end
+    e = caught(() -> multiply(Factor(x, [2^32, 1]), Factor([x, y], [2^32 1; 1 1])))
+    @test e isa FactorDomainError && e.backend === :multiply
+    @test e.vars == [:X, :Y] && e.index == (1, 1) && e.value == big(2)^64
+    @test occursin("overflows", sprint(showerror, e)) &&
+          occursin("18446744073709551616", sprint(showerror, e))
+    # Products that fit are Base's, and an operand that is exact zero gives zero.
+    @test multiply(Factor(x, [2^31, 0]), Factor([x, y], [2^31 1; 7 1])).table ==
+          [2^62 2^31; 0 0]
+    # Sums: the cell of the result, and the total.
+    big_counts = Factor([x, y], [typemax(Int) 0; 1 1])
+    e = caught(() -> marginalize(big_counts, :X))
+    @test e isa FactorDomainError && e.backend === :marginalize && e.vars == [:Y] &&
+          e.index == (1,) && e.value == big(typemax(Int)) + 1
+    @test marginalize(big_counts, :Y).table == [typemax(Int), 2]
+    e = caught(() -> normalize(big_counts))
+    @test e isa FactorDomainError && e.backend === :normalize && e.index == () &&
+          e.vars == [:X, :Y]
+    @test occursin("the total of the factor over [:X, :Y]", sprint(showerror, e))
+    # The small integer types sum to Int, as `sum` does, and do not wrap at their own width.
+    @test marginalize(Factor(x, Int8[100, 100]), :X).table[] === 200
+    # Mixed signs: a negative integer times an unsigned one has no unsigned value.
+    e = caught(() -> multiply(Factor(x, UInt[2, 1]), Factor(x, [-1, 1])))
+    @test e isa FactorDomainError && e.backend === :multiply && e.value == -1
+    # Rationals: Base raised OverflowError; now the cell is reported, and a product or sum
+    # whose exact value fits is Base's.
+    r = Factor(x, [1 // 2^40, 1 // 1])
+    e = caught(() -> multiply(r, Factor([x, y], [1//2^40 1//1; 1//1 1//1])))
+    @test e isa FactorDomainError && e.value == big(1) // big(2)^80
+    @test multiply(r, Factor(x, [2^39 // 1, 3 // 1])).table == [1 // 2, 3 // 1]
+    @test marginalize(Factor(x, [1 // 3, 1 // 6]), :X).table[] == 1 // 2
+    e = caught(() -> marginalize(Factor(x, [1 // typemax(Int), 1 // (typemax(Int) - 1)]),
+                                 :X))
+    @test e isa FactorDomainError && e.backend === :marginalize
+    @test normalize(Factor(x, [1 // 3, 2 // 3])).table == [1 // 3, 2 // 3]
+    # BigInt and Rational{BigInt} tables are exact and unchecked.
+    @test multiply(Factor(x, big.([2^62, 1])), Factor(x, big.([2^62, 1]))).table ==
+          [big(2)^124, 1]
+end

@@ -183,12 +183,23 @@ is `BayesianNetworks.UnknownStateError` (ADR 0015). On the factor-graph method t
 are [`ScopeError`](@ref) and `FiniteKernels`' `InvalidAxisError`. Either method
 throws `BayesianNetworks.ImpossibleEvidenceError`, carrying
 the failing case's merged evidence, if a case's evidence has probability
-exactly zero under the model.
+exactly zero under the model. The model method asks for every case's posterior under the
+rule for tolerated entries in `[-atol, 0)` of the model-level [`infer`](@ref), and so raises
+`BayesianNetworks.IndeterminatePosteriorError` for a case exactly where `infer` and
+`BayesianNetworks.marginal` would.
 """
 function predict(fg::FactorGraph, cases, target::Symbol;
                  evidence_vars::Union{Nothing,AbstractVector{Symbol}}=nothing,
                  backend::InferenceBackend=VariableElimination(),
                  base_evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}())
+    return _predict(fg, cases, target, evidence_vars, backend, base_evidence, nothing)
+end
+
+# `budget` is the model's tolerance budget (`_tolerance_budget`, model_inference.jl): every
+# case's posterior is asked for under the rule for tolerated entries; `nothing` on a factor
+# graph, which has no tolerance.
+function _predict(fg::FactorGraph, cases, target::Symbol, evidence_vars, backend,
+                  base_evidence, budget)
     cs = Cases(cases)
     haskey(fg.axes, target) ||
         throw(ScopeError(:predict, "the target is not a variable of the model", [target]))
@@ -211,7 +222,9 @@ function predict(fg::FactorGraph, cases, target::Symbol;
         ev = merge(Dict{Symbol,Symbol}(base_evidence),
                    Dict{Symbol,Symbol}(v => case[v] for v in ev_vars if haskey(case, v)))
         delete!(ev, target)
-        f = first(infer(fg, [target]; evidence=ev, backend))
+        f = _under_tolerance(fg, ev, budget, backend) do
+            return first(infer(fg, [target]; evidence=ev, backend))
+        end
         probs[i, :] = f.table
         haskey(case, target) && (outcomes[i] = label_index(ax, case[target]))
     end
@@ -238,13 +251,14 @@ end
 
 function predict(m::BayesModel, cases, target::Symbol;
                  evidence_vars::Union{Nothing,AbstractVector{Symbol}}=nothing,
-                 atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
+                 backend::InferenceBackend=VariableElimination(),
+                 atol::Real=BayesianNetworks.DEFAULT_ATOL)
     fg = compile(m; atol=atol)
     cs = Cases(cases)
     _check_case_labels(m, cs, target, evidence_vars)
-    return predict(fg, cs, target; evidence_vars,
-                   base_evidence=Dict{Symbol,Symbol}(BayesianNetworks.evidence(m)),
-                   kwargs...)
+    return _predict(fg, cs, target, evidence_vars, backend,
+                    Dict{Symbol,Symbol}(BayesianNetworks.evidence(m)),
+                    _tolerance_budget(fg, atol))
 end
 
 """
@@ -893,7 +907,8 @@ that "does the network beat always predicting the prior?" can be answered.
 
 `state` selects the one-versus-rest state used for calibration and ROC; it
 defaults to the last state of the target. `bins` and `floor` are passed to
-[`calibration_curve`](@ref) and [`log_score`](@ref).
+[`calibration_curve`](@ref) and [`log_score`](@ref). The model method applies the rule for
+tolerated entries to every case, as [`predict`](@ref) does.
 
 This function is unrelated to `CategoricalBayesianNetworks.evaluate`, which
 interprets a categorical expression in FinStoch; `using` both packages needs
@@ -918,9 +933,15 @@ function evaluate(fg::FactorGraph, cases, target::Symbol;
                   backend::InferenceBackend=VariableElimination(), bins::Integer=10,
                   floor::Real=1e-12,
                   base_evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}())
+    return _evaluate(fg, cases, target, evidence_vars, state, backend, bins, floor,
+                     base_evidence, nothing)
+end
+
+function _evaluate(fg::FactorGraph, cases, target::Symbol, evidence_vars, state, backend,
+                   bins, floor, base_evidence, budget)
     cs = Cases(cases)
-    p = predict(fg, cs, target; evidence_vars, backend, base_evidence)
-    b = predict(fg, cs, target; evidence_vars=Symbol[], backend, base_evidence)
+    p = _predict(fg, cs, target, evidence_vars, backend, base_evidence, budget)
+    b = _predict(fg, cs, target, Symbol[], backend, base_evidence, budget)
     _require_outcomes(p, :evaluate)
     st = state === nothing ? last(p.axis.labels) : state
     k = _state_index(p, st)
@@ -937,12 +958,13 @@ end
 function evaluate(m::BayesModel, cases, target::Symbol;
                   evidence_vars::Union{Nothing,AbstractVector{Symbol}}=nothing,
                   state::Union{Nothing,Symbol}=nothing,
-                  atol::Real=BayesianNetworks.DEFAULT_ATOL, kwargs...)
+                  backend::InferenceBackend=VariableElimination(), bins::Integer=10,
+                  floor::Real=1e-12, atol::Real=BayesianNetworks.DEFAULT_ATOL)
     fg = compile(m; atol=atol)
     cs = Cases(cases)
     _check_case_labels(m, cs, target, evidence_vars)
     state === nothing || _check_state(m, target, state)
-    return evaluate(fg, cs, target; evidence_vars, state,
-                    base_evidence=Dict{Symbol,Symbol}(BayesianNetworks.evidence(m)),
-                    kwargs...)
+    return _evaluate(fg, cs, target, evidence_vars, state, backend, bins, floor,
+                     Dict{Symbol,Symbol}(BayesianNetworks.evidence(m)),
+                     _tolerance_budget(fg, atol))
 end

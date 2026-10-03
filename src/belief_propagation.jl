@@ -13,7 +13,8 @@ previous sweep's messages) or `:sequential` (factor by factor, each update
 seeing the latest messages). A fixed point on a feasible tree has the exact
 marginals; a finite tolerance is not itself a marginal-error bound.
 `check_evidence=true` first uses exact variable elimination to check global
-evidence feasibility, potentially at exponential cost. Without that opt-in,
+evidence feasibility, potentially at exponential cost; it is the only exact
+computation belief propagation ever runs (ADR 0011). Without that opt-in,
 local zero-support errors are detected but global feasibility is not certified.
 [`BPDiagnostics`](@ref) reports both convergence and whether evidence was checked.
 Throws `ArgumentError` for parameters outside these ranges.
@@ -60,12 +61,13 @@ point of the message equations gives exact marginals for feasible evidence.
 `converged` does not certify global evidence feasibility: unless
 `evidence_checked` is true, that status is unknown.
 
-`exact_fallback` is true when a message or belief summed to zero although the exact
-evidence mass was positive -- local support is not a complete feasibility test on a graph
-with loops, and a message can underflow -- and the marginals were therefore computed by
-the junction tree in exact arithmetic instead, each cell correctly rounded (ADR 0014,
-ADR 0016). `iterations`,
-`converged` and `max_residual` then describe no BP run (0, `true`, 0.0).
+`log_domain` is true when the messages were computed in the log domain. Binary64
+messages are used first; when one of them would leave the normal range -- a product of
+nonzero values falls below `floatmin`, or a message sums to a number that is not
+normal and positive although it is not exactly zero -- the same message passing is redone
+with logarithms of the messages, where nothing underflows. The marginals are still belief
+propagation's: the log domain changes the arithmetic, not the algorithm, and belief
+propagation never falls back to an exact backend.
 """
 struct BPDiagnostics
     iterations::Int
@@ -73,7 +75,7 @@ struct BPDiagnostics
     max_residual::Float64
     tree::Bool
     evidence_checked::Bool
-    exact_fallback::Bool
+    log_domain::Bool
 end
 function BPDiagnostics(iterations::Integer, converged::Bool, max_residual::Real, tree::Bool,
                        evidence_checked::Bool=false)
@@ -102,11 +104,41 @@ function _is_forest(factors::AbstractVector{<:Factor})
     return Graphs.ne(g) == Graphs.nv(g) - length(Graphs.connected_components(g))
 end
 
+# The arithmetics of the message equations
+# ----------------------------------------
+#
+# The message equations below are written once, against two arithmetics, as the exact
+# drivers are (arithmetic.jl): a change to the algorithm reaches both.
+#
+# `_LinearMessages`: messages in the float type of the graph, the potentials scaled by a
+# power of two (`_linear_potentials`). Every product it forms is checked with the trust
+# test of the exact backends (`_lost` and `_product_underflowed`, arithmetic.jl): a product
+# of nonzero values below `floatmin`, a normalised entry below it, or a message sum that is
+# not a normal positive number throws `_UnresolvedMass`, and the run is redone in the log
+# domain. So when
+# a message sums to exactly zero, no product before it lost a nonzero value, and the zero is
+# exact. On nonnegative potentials an exact zero message proves the evidence impossible: a
+# configuration of positive mass keeps every exact message positive at its own values, by
+# induction over the updates, damping and normalisation included. That raises
+# `ImpossibleEvidenceError` at once, with no exact inference (ADR 0011).
+#
+# `_LogMessages`: the logarithms of the messages and potentials. A zero is `-Inf` exactly
+# and a product is a sum, so nothing underflows, and an all `-Inf` message is again an
+# exact zero.
+abstract type _MessageArithmetic end
+struct _LinearMessages <: _MessageArithmetic
+    nonnegative::Bool
+end
+struct _LogMessages <: _MessageArithmetic end
+
 # Message state of one run: factor `f` has one message in each direction for
 # every position `k` of its scope; `incidences[x]` lists the `(f, k)` pairs of
-# variable `x`. `evidence` is carried so that a zero message or belief can report it.
+# variable `x`. `evidence` is carried so that a zero message or belief can report it, and
+# `exponents[f]` is the smallest binary exponent of factor `f`'s nonzero entries, for the
+# linear trust test.
 struct _BPState{T}
     factors::Vector{Factor{T}}
+    exponents::Vector{Int}
     vars::Vector{Symbol}
     axes::Vector{FiniteAxis}
     incidences::Vector{Vector{Tuple{Int,Int}}}
@@ -115,113 +147,331 @@ struct _BPState{T}
     evidence::Dict{Symbol,Symbol}
 end
 
-function _BPState(factors::Vector{Factor{T}}, axes::Dict{Symbol,FiniteAxis},
-                  evidence::Dict{Symbol,Symbol}) where {T}
+function _BPState(A::_MessageArithmetic, factors::Vector{Factor{T}},
+                  axes::Dict{Symbol,FiniteAxis}, evidence::Dict{Symbol,Symbol}) where {T}
     vars = _variables(factors)
     index = Dict{Symbol,Int}(v => i for (i, v) in enumerate(vars))
     incidences = [Tuple{Int,Int}[] for _ in vars]
     for (f, fac) in enumerate(factors), (k, v) in enumerate(fac.vars)
         push!(incidences[index[v]], (f, k))
     end
-    uniform(fac, k) = fill(one(T) / size(fac.table, k), size(fac.table, k))
+    uniform(fac, k) = _uniform(A, T, size(fac.table, k))
     to_var = [[uniform(fac, k) for k in 1:ndims(fac)] for fac in factors]
     to_factor = [[uniform(fac, k) for k in 1:ndims(fac)] for fac in factors]
-    return _BPState{T}(factors, vars, FiniteAxis[axes[v] for v in vars], incidences, to_var,
-                       to_factor, evidence)
+    exponents = [_smallest_exponent(f.table) for f in factors]
+    return _BPState{T}(factors, exponents, vars, FiniteAxis[axes[v] for v in vars],
+                       incidences, to_var, to_factor, evidence)
 end
 
-# Normalise a message in place. A message whose sum is zero or below the normal range does
-# not prove the evidence impossible: on a graph with loops local support is not a complete
-# feasibility test, and a message can underflow. `_require_evidence_mass` therefore signals
-# it, and `belief_propagation` resolves the signal with the exact evidence mass (ADR 0014,
-# ADR 0016): `ImpossibleEvidenceError` for an exact zero, otherwise the junction tree in
-# exact arithmetic answers.
-function _normalize!(m::Vector, evidence)
-    s = sum(m)
-    _require_evidence_mass(s, evidence)
-    m ./= s
+_smallest_exponent(table::Array{<:Base.IEEEFloat}) = _min_exponent(table)
+_smallest_exponent(table::Array) = typemax(Int)
+
+_uniform(::_LinearMessages, ::Type{T}, n::Integer) where {T} = fill(one(T) / n, n)
+_uniform(::_LogMessages, ::Type{T}, n::Integer) where {T} = fill(-log(T(n)), n)
+
+_unit_message(::_LinearMessages, ::Type{T}, n::Integer) where {T} = ones(T, n)
+_unit_message(::_LogMessages, ::Type{T}, n::Integer) where {T} = zeros(T, n)
+
+# A running product of messages is rescaled by an exact power of two once its largest entry
+# drops below 2^-_RESCALE, so that a long product keeps what binary64 can hold.
+const _RESCALE = 256
+
+# m .*= other, in the arithmetic.
+function _absorb!(::_LogMessages, m::Vector, other::Vector)
+    m .+= other
+    return m
+end
+function _absorb!(::_LinearMessages, m::Vector, other::Vector)
+    m .*= other
+    return m
+end
+function _absorb!(::_LinearMessages, m::Vector{T},
+                  other::Vector{T}) where {T<:Base.IEEEFloat}
+    peak = zero(T)
+    @inbounds for i in eachindex(m, other)
+        a = m[i]
+        b = other[i]
+        p = a * b
+        _lost(a, b, p) && _untrusted()
+        m[i] = p
+        peak = max(peak, abs(p))
+    end
+    if isfinite(peak) && !iszero(peak) && exponent(peak) < -_RESCALE
+        shift = -exponent(peak)
+        m .= ldexp.(m, shift)
+    end
     return m
 end
 
-# m_{x -> f}(x) = prod_{g in N(x) \ f} m_{g -> x}(x), for the incidence (f, k) of x.
-function _variable_message(st::_BPState{T}, x::Int, f::Int, k::Int) where {T}
-    m = ones(T, length(st.axes[x]))
-    for (g, l) in st.incidences[x]
-        (g == f && l == k) && continue
-        m .*= st.to_var[g][l]
-    end
-    return _normalize!(m, st.evidence)
-end
-
 # m_{f -> x}(x) = sum_{x_f \ x} f(x_f) prod_{y != x} m_{y -> f}(y), x at position k.
-function _factor_message(fac::Factor{T}, incoming::Vector{Vector{T}}, k::Int) where {T}
+function _factor_message(A::_MessageArithmetic, st::_BPState{T}, f::Int,
+                         k::Int) where {T}
+    fac = st.factors[f]
     nd = ndims(fac)
     nd == 1 && return copy(vec(fac.table))
     sz = size(fac)
+    safe = _products_safe(A, st, f, k)
     t = fac.table
     for j in 1:nd
         j == k && continue
         shape = ntuple(i -> i == j ? sz[j] : 1, nd)
-        t = t .* reshape(incoming[j], shape)
+        mj = reshape(st.to_factor[f][j], shape)
+        u = _combine(A, t, mj)
+        safe || !_product_underflowed(t, mj, u) || _untrusted()
+        t = u
     end
     dims = Tuple(j for j in 1:nd if j != k)
-    return vec(sum(t; dims=dims))
+    return _sum_messages(A, t, dims)
+end
+
+_combine(::_LinearMessages, t, m) = t .* m
+_combine(::_LogMessages, t, m) = t .+ m
+
+_sum_messages(::_LinearMessages, t, dims) = vec(sum(t; dims=dims))
+_sum_messages(::_LogMessages, t, dims) = vec(_logsumexp(t, dims))
+
+# Whether no product of nonzero entries in the message from factor `f` to position `k` can
+# fall below `floatmin`, judged from the smallest nonzero exponents alone (`_may_underflow`,
+# arithmetic.jl): each partial product's entries are at least 2^(the sum of the exponents
+# so far). The log domain has nothing to check.
+_products_safe(::_LogMessages, st::_BPState, f::Int, k::Int) = true
+_products_safe(::_LinearMessages, st::_BPState, f::Int, k::Int) = true
+function _products_safe(::_LinearMessages, st::_BPState{T}, f::Int,
+                        k::Int) where {T<:Base.IEEEFloat}
+    low = st.exponents[f]
+    low == typemax(Int) && return true
+    for (j, m) in enumerate(st.to_factor[f])
+        j == k && continue
+        e = _min_exponent(m)
+        e == typemax(Int) && return true
+        low += e
+        low < exponent(floatmin(T)) && return false
+    end
+    return true
+end
+
+# log(sum(exp, t; dims)), with an all `-Inf` slice giving `-Inf` exactly.
+function _logsumexp(t::AbstractArray{T}, dims) where {T}
+    peak = maximum(t; dims=dims)
+    shift = map(p -> isfinite(p) ? p : zero(T), peak)
+    return shift .+ log.(sum(exp.(t .- shift); dims=dims))
+end
+function _logsumexp(m::AbstractVector{T}) where {T}
+    peak = maximum(m)
+    isfinite(peak) || return peak
+    return peak + log(sum(x -> exp(x - peak), m))
+end
+
+# Normalise a message in place. A message that sums to exactly zero on nonnegative
+# potentials proves the evidence impossible (see `_LinearMessages`); any other sum that is
+# not a normal positive number leaves the linear run untrusted (`_require_evidence_mass`
+# throws `_UnresolvedMass`), and the run is redone in the log domain.
+function _normalize!(A::_LinearMessages, m::Vector, st::_BPState)
+    s = sum(m)
+    A.nonnegative && iszero(s) && _impossible(st.evidence)
+    _require_evidence_mass(s, st.evidence)
+    return _divide!(m, s)
+end
+function _normalize!(::_LogMessages, m::Vector, st::_BPState)
+    total = _logsumexp(m)
+    total == -Inf && _impossible(st.evidence)
+    m .-= total
+    return m
+end
+
+# m ./= s. A normalised entry is an operand of later products, so one that came out below
+# `floatmin` leaves the run untrusted, as an underflowed product would.
+function _divide!(m::Vector, s)
+    m ./= s
+    return m
+end
+function _divide!(m::Vector{T}, s::T) where {T<:Base.IEEEFloat}
+    @inbounds for i in eachindex(m)
+        q = m[i] / s
+        !iszero(m[i]) & (abs(q) < floatmin(T)) && _untrusted()
+        m[i] = q
+    end
+    return m
+end
+
+# new .= (1 - damping) .* new .+ damping .* old, in the arithmetic.
+function _damp!(::_LinearMessages, new::Vector, old::Vector, damping)
+    new .= (1 - damping) .* new .+ damping .* old
+    return new
+end
+function _damp!(::_LinearMessages, new::Vector{T}, old::Vector{T},
+                damping) where {T<:Base.IEEEFloat}
+    c = 1 - damping
+    @inbounds for i in eachindex(new, old)
+        a = new[i]
+        b = old[i]
+        p = c * a
+        q = damping * b
+        x = convert(T, p + q)
+        lost = (!iszero(a) & (abs(p) < floatmin(p))) |
+               (!iszero(b) & (abs(q) < floatmin(q))) | issubnormal(x)
+        lost && _untrusted()
+        new[i] = x
+    end
+    return new
+end
+function _damp!(::_LogMessages, new::Vector{T}, old::Vector{T}, damping) where {T}
+    a = T(log1p(-damping))
+    b = T(log(damping))
+    @inbounds for i in eachindex(new, old)
+        new[i] = _logaddexp(a + new[i], b + old[i])
+    end
+    return new
+end
+
+function _logaddexp(x, y)
+    x == -Inf && return y
+    y == -Inf && return x
+    return max(x, y) + log1p(exp(-abs(x - y)))
+end
+
+# The residual is measured on the probabilities in both arithmetics.
+_distance(::_LinearMessages, new::Vector, old::Vector) = maximum(abs.(new .- old))
+_distance(::_LogMessages, new::Vector, old::Vector) = maximum(abs.(exp.(new) .- exp.(old)))
+
+# m_{x -> f}(x) = prod_{g in N(x) \ f} m_{g -> x}(x), for the incidence (f, k) of x.
+function _variable_message(A::_MessageArithmetic, st::_BPState{T}, x::Int, f::Int,
+                           k::Int) where {T}
+    m = _unit_message(A, T, length(st.axes[x]))
+    for (g, l) in st.incidences[x]
+        (g == f && l == k) && continue
+        _absorb!(A, m, st.to_var[g][l])
+    end
+    return _normalize!(A, m, st)
 end
 
 # Update the messages out of factor `f`; convergence is measured separately.
-function _update_factor!(st::_BPState{T}, f::Int, damping) where {T}
+function _update_factor!(A::_MessageArithmetic, st::_BPState, f::Int, damping)
     fac = st.factors[f]
     residual = 0.0
     for k in 1:ndims(fac)
-        new = _normalize!(_factor_message(fac, st.to_factor[f], k), st.evidence)
+        new = _normalize!(A, _factor_message(A, st, f, k), st)
         old = st.to_var[f][k]
-        residual = max(residual, maximum(abs.(new .- old)))
-        iszero(damping) || (new .= (1 - damping) .* new .+ damping .* old)
+        residual = max(residual, _distance(A, new, old))
+        iszero(damping) || _damp!(A, new, old, damping)
         st.to_var[f][k] = new
     end
     return residual
 end
 
-function _fixed_point_residual!(st::_BPState)
+function _fixed_point_residual!(A::_MessageArithmetic, st::_BPState)
     for (x, inc) in enumerate(st.incidences), (f, k) in inc
-        st.to_factor[f][k] = _variable_message(st, x, f, k)
+        st.to_factor[f][k] = _variable_message(A, st, x, f, k)
     end
     residual = 0.0
     for (f, fac) in enumerate(st.factors), k in 1:ndims(fac)
-        target = _normalize!(_factor_message(fac, st.to_factor[f], k), st.evidence)
-        residual = max(residual, maximum(abs.(target .- st.to_var[f][k])))
+        target = _normalize!(A, _factor_message(A, st, f, k), st)
+        residual = max(residual, _distance(A, target, st.to_var[f][k]))
     end
     return residual
 end
 
-function _sweep!(st::_BPState, damping, schedule::Symbol)
+function _sweep!(A::_MessageArithmetic, st::_BPState, damping, schedule::Symbol)
     residual = 0.0
     if schedule === :flooding
         for (x, inc) in enumerate(st.incidences), (f, k) in inc
-            st.to_factor[f][k] = _variable_message(st, x, f, k)
+            st.to_factor[f][k] = _variable_message(A, st, x, f, k)
         end
         for f in eachindex(st.factors)
-            residual = max(residual, _update_factor!(st, f, damping))
+            residual = max(residual, _update_factor!(A, st, f, damping))
         end
     else
         index = Dict{Symbol,Int}(v => i for (i, v) in enumerate(st.vars))
         for f in eachindex(st.factors)
             for (k, v) in enumerate(st.factors[f].vars)
-                st.to_factor[f][k] = _variable_message(st, index[v], f, k)
+                st.to_factor[f][k] = _variable_message(A, st, index[v], f, k)
             end
-            residual = max(residual, _update_factor!(st, f, damping))
+            residual = max(residual, _update_factor!(A, st, f, damping))
         end
     end
     return residual
 end
 
-function _belief(st::_BPState{T}, x::Int) where {T}
-    m = ones(T, length(st.axes[x]))
+# The marginal of variable `x`: the normalised product of its incoming messages. A
+# negative cell, which only tolerated entries in [-atol, 0) can produce, leaves the
+# posterior indeterminate (`_posterior_normalize`).
+function _belief(A::_LinearMessages, st::_BPState{T}, x::Int) where {T}
+    m = _unit_message(A, T, length(st.axes[x]))
     for (g, l) in st.incidences[x]
-        m .*= st.to_var[g][l]
+        _absorb!(A, m, st.to_var[g][l])
     end
+    A.nonnegative && iszero(sum(m)) && _impossible(st.evidence)
     return _posterior_normalize(_factor([st.vars[x]], [st.axes[x]], m), st.evidence)
 end
+function _belief(A::_LogMessages, st::_BPState{T}, x::Int) where {T}
+    m = _unit_message(A, T, length(st.axes[x]))
+    for (g, l) in st.incidences[x]
+        _absorb!(A, m, st.to_var[g][l])
+    end
+    _normalize!(A, m, st)
+    return _factor([st.vars[x]], [st.axes[x]], exp.(m))
+end
+
+# The potentials of the binary64 run: each conditioned factor in the float type `R`, scaled
+# by a power of two so that its largest magnitude lies in [1, 2). Messages are normalised,
+# so a constant factor does not change them, and a power of two is exact, so a graph whose
+# messages stay in the normal range gets the same messages bit for bit; one whose potentials
+# are tiny (say, scaled by 1e-310) no longer underflows. Returns `nothing` when some
+# potential cannot be held this way -- a nonzero entry would fall below `floatmin` of `R`, as
+# when one factor's entries span more than binary64's range, or an entry is not finite --
+# and the log domain is used from the start.
+function _linear_potentials(::Type{R}, factors::Vector{<:Factor}) where {R}
+    out = Factor{R}[]
+    for g in factors
+        all(isfinite, g.table) || return nothing
+        peak = maximum(abs, g.table)
+        if iszero(peak)
+            push!(out, _convert_factor(R, g))
+            continue
+        end
+        shift = -_binary_exponent(peak)
+        table = map(x -> convert(R, _scaled(x, shift)), g.table)
+        _faithful(g.table, table) || return nothing
+        push!(out, _factor(g.vars, g.axes, table))
+    end
+    return out
+end
+
+_binary_exponent(x::AbstractFloat) = exponent(x)
+_binary_exponent(x::Real) = exponent(BigFloat(x))
+
+_scaled(x::AbstractFloat, shift::Int) = ldexp(x, shift)
+_scaled(x::Real, shift::Int) = ldexp(BigFloat(x), shift)
+
+_faithful(original::Array, scaled::Array) = true
+function _faithful(original::Array, scaled::Array{R}) where {R<:Base.IEEEFloat}
+    return all(i -> iszero(original[i]) || abs(scaled[i]) >= floatmin(R),
+               eachindex(original, scaled))
+end
+
+# The log domain needs every entry of the graph finite (`FactorDomainError`) and
+# nonnegative: a tolerated negative entry has no logarithm, and binary64 messages that left
+# the normal range cannot show it small beside the evidence, so the posterior is
+# indeterminate (ADR 0014). Every entry is checked, including those the evidence removes,
+# as for the log backends and the exact fallback.
+function _check_log_entries(fg::FactorGraph, evidence)
+    for f in fg.factors, index in CartesianIndices(f.table)
+        x = f.table[index]
+        isfinite(x) || throw(FactorDomainError(:log_domain, copy(f.vars), Tuple(index), x))
+        x < 0 &&
+            throw(IndeterminatePosteriorError(Dict{Symbol,Symbol}(evidence),
+                                              "binary64 messages left the normal range, and the log-domain messages have no logarithm for a tolerated negative entry ($(x))"))
+    end
+    return nothing
+end
+
+function _log_potential(::Type{L}, g::Factor) where {L}
+    return _factor(g.vars, g.axes,
+                   map(x -> iszero(x) ? L(-Inf) : _log_entry(L, x), g.table))
+end
+
+_log_entry(::Type{L}, x::AbstractFloat) where {L} = log(convert(L, x))
+_log_entry(::Type{L}, x::Real) where {L} = convert(L, log(BigFloat(x)))
 
 """
     belief_propagation(fg::FactorGraph, backend=BeliefPropagation(); evidence=Dict{Symbol,Symbol}())
@@ -230,8 +480,7 @@ end
 Sum-product belief propagation on `fg` conditioned on `evidence`. Factors
 are conditioned first; a factor left with an empty scope only scales the
 joint, so it is dropped from the message passing after its value has been
-multiplied into the scale `P(evidence)` contributed by such factors.
-Messages use a floating-point type (integer factors are promoted), start
+checked. Messages use a floating-point type (integer factors are promoted), start
 uniform and follow the sum-product equations of SPEC section 20 until the
 largest undamped message-equation residual at the current iterate is
 below `backend.tol` or `backend.maxiter` sweeps have run. The marginal of
@@ -247,65 +496,82 @@ the factor-graph (sum-product) form of [Kschischang2001](@cite); the
 behaviour of the loopy fixed point on graphs with cycles is the empirical
 study of [MurphyWeissJordan1999](@cite).
 
+Messages are computed in binary64 (the graph's float type), each potential scaled by a
+power of two, which leaves the normalised messages unchanged. When a binary64 message would
+leave the normal range -- a product of nonzero values falls below `floatmin`, or a sum is
+not a normal positive number without being exactly zero -- the same message passing is
+redone in the log domain, where nothing underflows, and `diagnostics.log_domain` is true.
+The answer is belief propagation's either way: belief propagation never falls back to an
+exact backend, so its cost stays that of message passing.
+
 Detectable impossible evidence is an error: when a dropped scalar factor is
-zero, when a message is identically zero, or when the belief of a variable
-has zero mass, `BayesianNetworks.ImpossibleEvidenceError` is thrown rather
-than a normalised belief returned, as variable elimination and the junction
-tree do. Local support is not a global feasibility test on loopy graphs,
-and damped iterates may retain tiny positive support. Set
+zero, or when a message or the belief of a variable is exactly zero,
+`BayesianNetworks.ImpossibleEvidenceError` is thrown rather than a normalised
+belief returned, as variable elimination and the junction tree do. Such a zero is exact,
+since no product before it underflowed, and on nonnegative factors an exactly zero message
+proves that the evidence has probability exactly zero. Local support is not a global
+feasibility test on loopy graphs, and damped iterates may retain tiny positive support. Set
 `backend.check_evidence=true` to run an exact VE feasibility check first
 (it throws the same error for zero evidence mass);
-`diagnostics.evidence_checked` records that opt-in.
+`diagnostics.evidence_checked` records that opt-in. A tolerated entry in
+`[-atol, 0)` makes a zero sum inconclusive: when binary64 messages leave the normal range
+on such a graph, or a belief cell comes out negative,
+`BayesianNetworks.IndeterminatePosteriorError` is thrown.
 
-Throws [`ScopeError`](@ref) for evidence on unknown variables and
-`FiniteKernels.InvalidAxisError` for a label a variable does not have.
+Throws [`ScopeError`](@ref) for evidence on unknown variables,
+`FiniteKernels.InvalidAxisError` for a label a variable does not have, and
+[`FactorDomainError`](@ref) for an entry that is not finite (in a graph built with
+`check = false`) once the log domain is needed.
 """
 function belief_propagation(fg::FactorGraph{T},
                             backend::BeliefPropagation=BeliefPropagation();
                             evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}()) where {T}
     _check_query(fg, Symbol[], evidence)
     ev = Dict{Symbol,Symbol}(evidence)
-    if backend.check_evidence
-        mass = variable_elimination(fg, Symbol[]; evidence=ev)[1].table[]
-        _resolving_mass(() -> _require_evidence_mass(mass, ev), ev) do
-            _exactly_impossible(fg, ev) && _impossible(ev)
-            return nothing
-        end
-    end
-    R = typeof(float(one(T)))
-    factors = Factor{R}[]
+    backend.check_evidence && _require_feasible(fg, ev, MinFill())
+    conditioned = Factor{T}[]
     for f in fg.factors
-        g = _convert_factor(R, condition(f, ev))
+        g = condition(f, ev)
         if isempty(g.vars)
             # A factor conditioned to the empty scope is one entry of the data. Check it,
-            # not the product of all of them, which can underflow: an exact zero entry
-            # makes the evidence impossible, and a negative one leaves it indeterminate.
+            # in its own type and not the product of all of them, which can underflow: an
+            # exact zero entry makes the evidence impossible, and a negative one leaves it
+            # indeterminate.
             v = g.table[]
             iszero(v) && _impossible(ev)
             v < 0 &&
                 throw(IndeterminatePosteriorError(ev,
                                                   "a factor conditioned on the evidence is negative ($(v))"))
         else
-            push!(factors, g)
+            push!(conditioned, g)
         end
     end
-    return _resolving_mass(() -> _run_bp(fg, backend, factors, ev), ev) do
-        marginals = _exact_all_marginals(MinFill(), fg, ev)
-        return Dict{Symbol,Factor{R}}(v => _convert_factor(R, f) for (v, f) in marginals),
-               BPDiagnostics(0, true, 0.0, _is_forest(factors), backend.check_evidence,
-                             true)
+    R = typeof(float(one(T)))
+    tree = _is_forest(conditioned)
+    potentials = _linear_potentials(R, conditioned)
+    if potentials !== nothing
+        A = _LinearMessages(all(g -> all(>=(0), g.table), potentials))
+        try
+            return _run_bp(A, potentials, fg, backend, ev, R, tree)
+        catch e
+            e isa _UnresolvedMass || rethrow()
+        end
     end
+    _check_log_entries(fg, ev)
+    L = promote_type(R, Float64)
+    logs = Factor{L}[_log_potential(L, g) for g in conditioned]
+    return _run_bp(_LogMessages(), logs, fg, backend, ev, R, tree)
 end
 
-function _run_bp(fg::FactorGraph, backend::BeliefPropagation, factors::Vector{Factor{R}},
-                 ev) where {R}
-    st = _BPState(factors, fg.axes, ev)
+function _run_bp(A::_MessageArithmetic, potentials::Vector{<:Factor}, fg::FactorGraph,
+                 backend::BeliefPropagation, ev, ::Type{R}, tree::Bool) where {R}
+    st = _BPState(A, potentials, fg.axes, ev)
     iterations = 0
     residual = Inf
     converged = false
     while iterations < backend.maxiter
-        _sweep!(st, backend.damping, backend.schedule)
-        residual = _fixed_point_residual!(st)
+        _sweep!(A, st, backend.damping, backend.schedule)
+        residual = _fixed_point_residual!(A, st)
         iterations += 1
         if residual < backend.tol
             converged = true
@@ -314,14 +580,14 @@ function _run_bp(fg::FactorGraph, backend::BeliefPropagation, factors::Vector{Fa
     end
     marginals = Dict{Symbol,Factor{R}}()
     for (x, v) in enumerate(st.vars)
-        marginals[v] = _belief(st, x)
+        marginals[v] = _convert_factor(R, _belief(A, st, x))
     end
     for (v, l) in ev
         marginals[v] = _point_mass(R, fg.axes[v], l)
     end
     return marginals,
-           BPDiagnostics(iterations, converged, residual, _is_forest(factors),
-                         backend.check_evidence)
+           BPDiagnostics(iterations, converged, residual, tree, backend.check_evidence,
+                         A isa _LogMessages)
 end
 
 function _infer(backend::BeliefPropagation, fg::FactorGraph, query, evidence)

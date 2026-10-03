@@ -140,3 +140,67 @@ end
     c, _ = variable_elimination(fg2, [:dysp])
     @test c.table ≈ a.table
 end
+
+# Review of 2026-10-02, finding 2: the elimination-order cache was never pruned (50,000
+# model-level queries, each compiling a fresh graph, left 49,333 dead entries), was mutated
+# without a lock (concurrent queries could corrupt the Dict), and handed out its own vector
+# (after `push!(d.order, :W)` the next query on that graph threw `ScopeError`).
+@testset "the elimination-order cache" begin
+    BNI = BayesianNetworkInference
+    x = FiniteAxis(:X, [:a, :b])
+    y = FiniteAxis(:Y, [:a, :b])
+    w = FiniteAxis(:W, [:a, :b])
+    fg = FactorGraph([Factor(x, [0.3, 0.7]), Factor([x, y], [0.9 0.1; 0.2 0.8]),
+                      Factor([y, w], [0.5 0.5; 0.1 0.9])])
+    want, d = variable_elimination(fg, [:X])
+    push!(d.order, :W)
+    again, d2 = variable_elimination(fg, [:X])
+    @test again.table == want.table
+    @test d2.order != d.order && !(:X in d2.order)
+
+    # Dead entries are dropped: every model-level query compiles a graph of its own.
+    bn = bayesnet(:A => [:a0, :a1], :B => [:b0, :b1]; mechanisms=[:A => (), :B => (:A,)])
+    m = bind_cpt(BayesModel(bn), [:A => [0.5, 0.5], :B => [0.9 0.1; 0.2 0.8]])
+    for k in 1:3000
+        infer(m, :A; evidence=Dict(:B => :b1))
+        k % 100 == 0 && GC.gc()
+    end
+    @test length(BNI._ORDER_CACHE) < 500
+    @test count(kv -> kv[2][1].value === nothing, BNI._ORDER_CACHE) < 300
+    # Every live entry is keyed by its own graph's identity.
+    @test all(kv -> kv[2][1].value === nothing || objectid(kv[2][1].value) == kv[1],
+              BNI._ORDER_CACHE)
+
+    # Concurrent queries, fresh graphs and one shared graph, under `julia -t 4`. The test
+    # process runs single-threaded, so a subprocess carries the threads.
+    script = """
+    using BayesianNetworkInference, FiniteKernels
+    function chain(n)
+        ax = [FiniteAxis(Symbol(:V, i), [:a, :b]) for i in 1:n]
+        return FactorGraph([Factor(ax[1], [0.4, 0.6]);
+                            [Factor([ax[i], ax[i + 1]], [0.9 0.1; 0.3 0.7]) for i in 1:(n - 1)]])
+    end
+    vars = [Symbol(:V, i) for i in 1:8]
+    shared = chain(8)
+    reference = Dict(v => first(variable_elimination(chain(8), [v])).table for v in vars)
+    bad = Threads.Atomic{Int}(0)
+    @sync for t in 1:8
+        Threads.@spawn for k in 1:1500
+            fg = iseven(k) ? shared : chain(8)
+            v = vars[mod1(k + t, 8)]
+            ev = isodd(k ÷ 2) ? Dict(vars[mod1(k + t + 1, 8)] => :a) : Dict{Symbol,Symbol}()
+            p, d = variable_elimination(fg, [v]; evidence=ev)
+            isempty(ev) && p.table != reference[v] && Threads.atomic_add!(bad, 1)
+            push!(d.order, :scratch)
+        end
+    end
+    for v in vars
+        first(variable_elimination(shared, [v])).table == reference[v] ||
+            Threads.atomic_add!(bad, 1)
+    end
+    print("threads=", Threads.nthreads(), " bad=", bad[])
+    """
+    cmd = `$(Base.julia_cmd()) --startup-file=no -t 4 --project=$(Base.active_project()) -e $script`
+    out = read(cmd, String)
+    @test out == "threads=4 bad=0"
+end

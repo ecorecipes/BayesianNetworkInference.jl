@@ -129,15 +129,28 @@ otherwise), but this backend needs more:
 
 - `:log_domain` ([`LogVariableElimination`](@ref), [`LogJunctionTree`](@ref),
   [`log_evidence_probability`](@ref)) needs finite, nonnegative entries whose logarithm is
-  representable;
+  representable; [`belief_propagation`](@ref) raises it for an entry that is not finite when
+  it redoes its message passing in the log domain (a tolerated negative entry there leaves
+  the posterior indeterminate instead);
 - `:trace_variable_elimination` ([`trace_variable_elimination`](@ref)) needs finite,
   nonnegative inputs;
 - `:stable_decision_elimination` (InfluenceDiagrams' exact decision elimination) needs
   finite, nonnegative probabilities, since exact arithmetic does not accept tolerated
   negative entries;
-- `:exact` (the exact fallback of every posterior entry point, ADR 0016) needs entries that
-  are exactly Float64 values, so a non-finite entry of a graph built with `check = false`,
-  or a wider type, is rejected.
+- `:exact` (the exact fallback of every posterior entry point, ADR 0016) takes every entry
+  at its exact value -- integers and rationals exactly, IEEE floats and `BigFloat`s at
+  their dyadic values -- so it rejects only an entry that has none: a non-finite entry of a
+  graph built with `check = false`, or an element type outside those;
+- `:multiply`, `:marginalize`, `:normalize` and `:calibrate` compute integer and rational
+  tables in checked arithmetic, where Base's machine integers would wrap silently and its
+  rationals of them throw `OverflowError`. Here the entry is one they compute: a product,
+  a sum or a rational quotient that the element type cannot hold. `vars` and `index` name
+  its cell in the result (an empty `index` with a nonempty scope is the total of the
+  factor over `vars`, as `normalize` and the junction tree's evidence mass form it), and
+  `value` is its exact value. A posterior entry point does not raise it: it recomputes the
+  posterior in exact arithmetic, as it does when it does not trust a binary64 run (ADR
+  0016), so only the factor operations themselves, `calibrate` and an empty query, which
+  return tables of the graph's own type, report it.
 
 `vars` is the factor's scope, `index` the entry's position in its table and `value` the
 entry. Small negative values are rejected, not clamped to zero. It replaces
@@ -150,6 +163,15 @@ struct FactorDomainError <: InferenceError
     value::Real
 end
 function Base.showerror(io::IO, e::FactorDomainError)
+    if e.backend in (:multiply, :marginalize, :normalize, :calibrate)
+        cell = isempty(e.index) && !isempty(e.vars) ?
+               string("the total of the factor over ", e.vars) :
+               string("the entry at ", e.index, " of the factor over ", e.vars)
+        return print(io, "FactorDomainError: ", e.backend,
+                     " overflows the integer or rational element type: ", cell,
+                     " is exactly ", e.value,
+                     ", which that type cannot hold; use a wider type, such as Float64 or BigInt")
+    end
     return print(io, "FactorDomainError: the ", e.backend,
                  " backend cannot take the entry ",
                  e.value, " at ", e.index, " of the factor over ", e.vars)
@@ -165,8 +187,10 @@ An execution trace cannot record this run (ADR 0015). `trace` is the tracing fun
 - `:cells`, `:compilation_cells`: a table would exceed the `max_entries` budget;
 - `:rational_digits`: an exact rational would exceed the profile's digit limit;
 - `:scalar_type`: the v1 profile records Float64 factors only;
-- `:evidence_underflow`: the evidence mass underflowed, and the v1 profile records Float64
-  execution, so it cannot fall back to the log domain as the backends do (ADR 0014).
+- `:evidence_underflow`: the binary64 run underflowed -- its evidence mass is not a normal
+  positive number, or a product of nonzero values fell below `floatmin` -- and the v1
+  profile records Float64 execution, so it cannot fall back to exact arithmetic as the
+  backends do (ADR 0014, ADR 0016).
 
 `vars` names the factor or variables concerned. These are limits of the trace format, not
 properties of the model: the same query without a trace succeeds.
@@ -204,10 +228,13 @@ function Base.showerror(io::IO, e::FactorEntryError)
                  e.atol, " (pass check = false to skip this)")
 end
 
-# Internal control-flow signal, never raised to a caller (ADR 0014): the binary64 path found
-# an evidence mass that is not a normal positive number, which does not decide whether the
-# evidence is impossible. Every public entry point catches it and recomputes in the log
-# domain (`_resolving_mass` in variable_elimination.jl).
+# Internal control-flow signal, never raised to a caller (ADR 0014): the binary64 run is not
+# trusted -- its evidence mass is not a normal positive number, which does not decide whether
+# the evidence is impossible, or a product of nonzero values fell below `floatmin` on the way
+# (`_check_product` in arithmetic.jl) -- or an integer or rational run overflowed its element
+# type (`_overflowed`). Every public entry point catches it: the exact backends recompute in
+# exact arithmetic (`_resolving_mass` in variable_elimination.jl), and belief propagation
+# redoes its message passing in the log domain.
 struct _UnresolvedMass <: InferenceError
     evidence::Dict{Symbol,Symbol}
 end

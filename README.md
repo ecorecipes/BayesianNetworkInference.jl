@@ -50,20 +50,31 @@ with `BayesianNetworkFormats.jl` (file formats) and `EcologicalBayesianNetworks.
 - `BeliefPropagation` backend: sum-product with damping, iteration limits and flooding/sequential
   schedules. `BPDiagnostics` reports the undamped fixed-point residual at the returned iterate;
   it is not a general marginal-error bound. Fixed points on feasible trees are exact, whereas
-  loopy beliefs are approximations. Local zero support raises `ImpossibleEvidenceError`,
-  but does not detect every globally impossible event. Opt into
+  loopy beliefs are approximations. An exactly zero message (local zero support) raises
+  `ImpossibleEvidenceError` at once, but does not detect every globally impossible event. Opt into
   `BeliefPropagation(check_evidence=true)` for an exact VE feasibility pass;
-  `diagnostics.evidence_checked` distinguishes that from unknown feasibility.
+  `diagnostics.evidence_checked` distinguishes that from unknown feasibility. That pass is the
+  only exact computation BP runs: potentials are rescaled by powers of two, and messages that
+  would still leave binary64's normal range are recomputed in the log domain
+  (`diagnostics.log_domain`), so the answer is always BP's own.
 - Exact VE/JT posterior entry points check global mass, including disconnected components and
   all-observed shortcuts. Evidence of probability exactly zero raises `ImpossibleEvidenceError`, the
   error `BayesianNetworks.marginal` raises (re-exported here), from every backend and everything
   built on them (ADR 0012). A binary64 mass that is zero, subnormal or non-finite does not decide
-  that, since a positive probability can underflow: the query is then recomputed in exact arithmetic
-  and answered, each cell the Float64 nearest the exact posterior, and the diagnostics'
-  `exact_fallback` says so (ADR 0014, ADR 0016). Tolerated negative entries
-  that leave a posterior's sign to rounding raise `IndeterminatePosteriorError`. An empty `infer`
+  that, since a positive probability can underflow, and a run in which a product of nonzero values
+  fell below `floatmin` is not trusted even when its mass is normal: the query is then recomputed in
+  exact arithmetic and answered, each cell the Float64 nearest the exact posterior, and the
+  diagnostics' `exact_fallback` says so (ADR 0014, ADR 0016). Tolerated negative entries
+  that leave a posterior's sign to rounding raise `IndeterminatePosteriorError`: at the model level
+  under the rule `BayesianNetworks.marginal` uses (an entry counts only where it takes part, the
+  evidence mass is compared with the tolerance budget, and a prior is exempt), at every model-level
+  entry point. An empty `infer`
   query still returns unnormalized evidence mass, which may legitimately be zero. Integer factors
-  promote to division-compatible posterior types.
+  promote to division-compatible posterior types. Integer and rational tables are multiplied and
+  summed in checked arithmetic and never wrap: `multiply`, `marginalize` and `normalize` raise
+  `FactorDomainError` naming the cell and its exact value, and a posterior whose integer or
+  rational run overflows is recomputed by the exact fallback instead. The exact fallback takes
+  every entry at its exact value, whatever the element type, and returns `Float64` cells.
 - `ancestral_sample` over named kernels in topological order and `empirical_marginal` for Monte Carlo cross-checks.
 - Out-of-sample validation: `Cases` datasets (a vector of `Dict{Symbol,Symbol}` observations, complete or
   partial), `predict` for a withheld target, the proper scoring rules `brier_score`, `log_score` and

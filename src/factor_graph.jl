@@ -70,13 +70,24 @@ function FactorGraph(factors::AbstractVector{<:Factor};
     return FactorGraph{T}(factors, prov)
 end
 
+# The entries are scanned as a flat vector (review of 2026-10-02, finding 6): a table's rank
+# is not part of `Factor{T}`, so iterating its `CartesianIndices` dispatched on every entry.
+# `vec` gives a `Vector{T}` whatever the rank, and the cell is recovered only for the error.
 function _check_factor_entries(f::Factor, atol::Real)
-    for ci in CartesianIndices(f.table)
-        v = f.table[ci]
-        (isfinite(v) && v >= -atol) ||
-            throw(FactorEntryError(copy(f.vars), ci, Float64(v), Float64(atol)))
+    t = vec(f.table)
+    i = _first_invalid_entry(t, atol)
+    i == 0 && return nothing
+    ci = CartesianIndices(size(f.table))[i]
+    return throw(FactorEntryError(copy(f.vars), ci, Float64(t[i]), Float64(atol)))
+end
+
+# The position of the first entry that is not finite or is below `-atol`, or 0.
+function _first_invalid_entry(t::Vector, atol::Real)
+    @inbounds for i in eachindex(t)
+        v = t[i]
+        (isfinite(v) && v >= -atol) || return i
     end
-    return nothing
+    return 0
 end
 
 Base.length(fg::FactorGraph) = length(fg.factors)

@@ -25,9 +25,11 @@ What a run of [`variable_elimination`](@ref) did: the elimination `order`
 used, the number of entries of the largest intermediate factor, the number of
 pairwise factor products, and the width of the elimination order (largest
 intermediate scope minus one, which equals the treewidth of the order on the
-interaction graph of the conditioned factors). `exact_fallback` is true when the
-binary64 evidence mass was not a normal positive number and the posterior was
-recomputed in exact arithmetic and correctly rounded (ADR 0014, ADR 0016).
+interaction graph of the conditioned factors). `exact_fallback` is true when the run was
+not trusted -- a binary64 evidence mass that is not a normal positive number, a product of
+nonzero values below `floatmin`, or an integer or rational product, sum or quotient that
+overflowed its element type -- and the posterior was recomputed in exact arithmetic and
+correctly rounded to Float64 (ADR 0014, ADR 0016).
 """
 struct InferenceDiagnostics
     order::Vector{Symbol}
@@ -57,12 +59,15 @@ function _check_query(fg::FactorGraph, query, evidence)
     return nothing
 end
 
-# Evidence mass (ADR 0012, ADR 0014). A binary64 mass is trusted only when it is a normal
-# positive number. Zero, a subnormal, a negative or a non-finite mass does not say whether
-# the evidence is impossible -- a positive probability that underflowed is zero too -- so
-# the binary64 path throws the internal `_UnresolvedMass` signal (src/errors.jl) instead of
-# deciding. Every public entry point catches it (`_resolving_mass`) and recomputes in exact
-# dyadic arithmetic (arithmetic.jl, ADR 0016), where only an exact zero is zero and so
+# Evidence mass (ADR 0012, ADR 0014). A binary64 run is trusted only when its mass is a
+# normal positive number and no product it computed from nonzero operands fell below
+# `floatmin` (the trust test, `_check_product` in arithmetic.jl). Zero, a subnormal, a
+# negative or a non-finite mass does not say whether the evidence is impossible -- a
+# positive probability that underflowed is zero too -- and a normal mass built from
+# underflowed products can be far from the exact one, so an untrusted run throws the
+# internal `_UnresolvedMass` signal (src/errors.jl) instead of deciding. Every public entry
+# point catches it (`_resolving_mass`) and recomputes in exact dyadic arithmetic
+# (arithmetic.jl, ADR 0016), where only an exact zero is zero and so
 # `ImpossibleEvidenceError`, and each posterior cell is rounded once to the nearest Float64.
 # Exact element types (integers, rationals) decide directly.
 
@@ -79,14 +84,51 @@ function _require_evidence_mass(mass::Real, evidence)
                                              "the evidence mass is negative ($(mass))"))
 end
 
+# Tolerated entries (ADR 0007, ADR 0011, ADR 0014 decision 4, ADR 0016 decision 4), under the
+# rule that BayesianNetworks, InfluenceDiagrams and this package share: a tolerated entry in
+# [-atol, 0) takes part in a posterior when it lies on a configuration consistent with the
+# evidence whose other entries are all nonzero; an entry multiplied by an exact zero
+# contributes nothing. When one takes part, the posterior is indeterminate if the evidence
+# mass is not larger than the budget (1 + atol)^n - 1, or if a cell of the queried posterior
+# is negative; cells of the joint that the query sums out do not count. A prior (empty
+# evidence) is exempt, and the binary64 and exact runs decide by the same rule.
+#
+# Only a model knows `atol`, so the model-level entry points apply the rule
+# (`_under_tolerance`, model_inference.jl): they decide whether an entry takes part and check
+# the budget, then ask the backend for the posterior inside `_MODEL_QUERY`. There a prior's
+# cells are returned as computed, and the exact fallback takes negative entries at their
+# exact value -- one that takes part shows in a negative exact cell -- instead of rejecting
+# them. The factor-graph methods run outside it: a negative posterior cell is indeterminate,
+# and the exact fallback rejects any negative entry (ADR 0016 decision 4).
+struct _ModelQuery
+    prior::Bool
+end
+const _MODEL_QUERY = Base.ScopedValues.ScopedValue{Union{Nothing,_ModelQuery}}(nothing)
+_in_model_query() = _MODEL_QUERY[] !== nothing
+_model_prior() = (q = _MODEL_QUERY[]; q !== nothing && q.prior)
+
+# Whether a tolerated negative entry takes part in the posterior under `evidence`: whether
+# some configuration consistent with the evidence has every entry nonzero and one negative.
+# The shared driver in the support arithmetic (arithmetic.jl), over the schedule of `order`,
+# so it costs one elimination of Boolean tables and never enumerates configurations.
+function _takes_part(fg::FactorGraph, evidence, order::EliminationStrategy)
+    result = first(_eliminate(_Support(), fg, Symbol[], evidence, order))
+    return (result.table[] & 0x02) != 0
+end
+
 # Normalise a posterior factor after checking its mass, so that posterior code never
 # reaches the `ArgumentError` of `normalize(::Factor)`. A negative posterior cell can come
-# only from tolerated entries in [-atol, 0); its sign is an artefact of the rounding.
-function _posterior_normalize(f::Factor, evidence)
-    _require_evidence_mass(sum(f.table), evidence)
-    p = normalize(f)
+# only from tolerated entries in [-atol, 0); its sign is an artefact of the rounding, unless
+# the query is a model's prior. An integer or rational total or quotient that overflows its
+# element type is the arithmetic `A`'s to resolve (`_overflowed`, arithmetic.jl).
+function _posterior_normalize(f::Factor, evidence, A::_Linear=_Linear())
+    s = _total(f, :normalize)
+    s isa FactorDomainError && _overflowed(A, s)
+    _require_evidence_mass(s, evidence)
+    p = _normalize(f)
+    p isa FactorDomainError && _overflowed(A, p)
     v = minimum(p.table; init=zero(eltype(p.table)))
-    v < 0 &&
+    v < 0 && !_model_prior() &&
         throw(IndeterminatePosteriorError(Dict{Symbol,Symbol}(evidence),
                                           "a posterior cell is negative ($(v))"))
     return p
@@ -119,6 +161,25 @@ function _exactly_impossible(fg::FactorGraph, evidence,
     return _exactly_zero(first(_eliminate(_Dyadic(), fg, Symbol[], evidence, order)))
 end
 
+# `ImpossibleEvidenceError` unless the evidence has positive mass: decided from the empty
+# query's binary64 mass when that is a normal positive number, and exactly otherwise. An
+# integer or rational graph decides exactly from the start, since the empty query's mass in
+# its own element type can overflow (`FactorDomainError`). Belief propagation's opt-in check
+# and the variable-elimination `all_marginals` of fully observed evidence use it.
+function _require_feasible(fg::FactorGraph{T}, evidence,
+                           order::EliminationStrategy) where {T}
+    if _checked(T)
+        _exactly_impossible(fg, evidence, order) && _impossible(evidence)
+        return nothing
+    end
+    mass = first(_variable_elimination(fg, Symbol[], evidence, order, nothing)).table[]
+    _resolving_mass(() -> _require_evidence_mass(mass, evidence), evidence) do
+        _exactly_impossible(fg, evidence, order) && _impossible(evidence)
+        return nothing
+    end
+    return nothing
+end
+
 # Strategy restricted to the variables that survive conditioning.
 _restrict(strategy::EliminationStrategy, evidence) = strategy
 function _restrict(strategy::UserOrder, evidence)
@@ -144,13 +205,23 @@ optimisation of [ZhangPoole1994](@cite).
 Throws [`ScopeError`](@ref) for unknown or repeated query variables, unknown
 evidence variables, or a query variable that also carries evidence, and
 `BayesianNetworks.ImpossibleEvidenceError` for a non-empty `query` when the
-evidence has probability exactly zero. A binary64 mass that is zero, subnormal or
-non-finite does not decide that -- a positive probability can underflow -- so the
-posterior is then recomputed in exact arithmetic, each cell rounded once to the Float64
-nearest the exact posterior of the graph as bound, and returned with
+evidence has probability exactly zero. A binary64 run does not decide that when its mass
+is zero, subnormal or non-finite -- a positive probability can underflow -- and its
+posterior is not trusted when a product of nonzero values fell below `floatmin` on the way
+(it came out subnormal, or rounded to zero), even if the mass is normal. Nor is a run on an
+integer or rational graph whose product, sum or quotient overflowed the element type: such
+tables are computed in checked arithmetic, never wrapped. The posterior is
+then recomputed in exact arithmetic, every entry at its exact value whatever the graph's
+element type, each cell rounded once to the Float64 nearest the
+exact posterior of the graph as bound, and returned, as a `Factor{Float64}`, with
 `diagnostics.exact_fallback == true` (ADR 0014, ADR 0016). A model with tolerated entries
 in `[-atol, 0)` raises `BayesianNetworks.IndeterminatePosteriorError` when a posterior cell
-comes out negative, or when the exact fallback is needed.
+comes out negative, or when the exact fallback is needed. An empty `query` returns the mass
+in the graph's own element type, so an integer mass that overflows it is a
+[`FactorDomainError`](@ref) instead.
+
+The elimination order is cached per graph (see the source); `diagnostics.order` is the
+caller's own copy, so changing it changes nothing else.
 """
 function variable_elimination(fg::FactorGraph{T}, query::AbstractVector{Symbol};
                               evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}(),
@@ -173,35 +244,65 @@ end
 # share one entry.
 #
 # Keyed on the identity of the factor vector, with the same discipline as the junction-tree
-# cache in `junction_tree.jl`: the stored `WeakRef` is compared with `===` on lookup, so a
-# recycled `objectid` can never return another graph's order, and an entry is dropped once
-# the factor vector is unreachable. Do not mutate `fg.factors` after a query; the cached
-# order would no longer describe the graph.
+# cache in `junction_tree.jl` (review of 2026-10-02, finding 2):
+#
+# - the stored `WeakRef` is compared with `===` on lookup, so a recycled `objectid` can never
+#   return another graph's order;
+# - the entries whose factor vector has been collected are dropped, amortised: the sweep
+#   runs when a graph is added and the cache has doubled since the last sweep, so a stream
+#   of graphs compiled per query (every model-level `infer` compiles one) keeps the cache
+#   bounded by about twice the graphs alive;
+# - every access holds `_ORDER_LOCK`, since queries may run on several threads at once;
+#   computing an order does not, so that one slow ordering does not hold up the others
+#   (two threads that miss on the same key compute the same order, and the second store
+#   wins);
+# - the cached vector is never handed out: a caller gets a copy, which becomes its
+#   diagnostics' `order`, so changing that changes nothing in the cache.
+#
+# Do not mutate `fg.factors` after a query; the cached order would no longer describe the
+# graph.
 const _OrderKey = Tuple{Vector{Symbol},EliminationStrategy,Vector{Symbol}}
 const _OrderEntry = Tuple{WeakRef,Dict{_OrderKey,Vector{Symbol}}}
 const _ORDER_CACHE = Dict{UInt,_OrderEntry}()
+const _ORDER_LOCK = ReentrantLock()
+const _ORDER_WATERMARK = Ref(16)
 
 # A workload that sweeps many distinct evidence patterns would otherwise grow an entry per
 # pattern; drop the graph's orders wholesale rather than grow without bound.
 const _ORDER_CACHE_LIMIT = 256
 
+# Drop the entries whose factor vector has been collected; the caller holds `_ORDER_LOCK`.
+function _prune_order_cache!()
+    length(_ORDER_CACHE) <= 2 * _ORDER_WATERMARK[] && return nothing
+    filter!(kv -> kv[2][1].value !== nothing, _ORDER_CACHE)
+    _ORDER_WATERMARK[] = max(16, length(_ORDER_CACHE))
+    return nothing
+end
+
 function _cached_elimination_order(factors::Vector{<:Factor}, owner, query, evidence,
                                    order)
     key = (sort!(collect(Symbol, keys(evidence))), order, collect(Symbol, query))
     id = objectid(owner)
-    entry = get(_ORDER_CACHE, id, nothing)
-    if entry !== nothing && entry[1].value === owner
-        cached = get(entry[2], key, nothing)
-        cached === nothing || return cached
-    else
-        entry = (WeakRef(owner), Dict{_OrderKey,Vector{Symbol}}())
-        _ORDER_CACHE[id] = entry
+    cached = lock(_ORDER_LOCK) do
+        entry = get(_ORDER_CACHE, id, nothing)
+        (entry === nothing || entry[1].value !== owner) && return nothing
+        return get(entry[2], key, nothing)
     end
+    cached === nothing || return copy(cached)
     vars = _variables(factors)
     graph, vars, index = _interaction_graph(factors, vars)
     elim = _elimination_order(graph, vars, index, _restrict(order, evidence), query)
-    length(entry[2]) < _ORDER_CACHE_LIMIT || empty!(entry[2])
-    entry[2][key] = elim
+    lock(_ORDER_LOCK) do
+        entry = get(_ORDER_CACHE, id, nothing)
+        if entry === nothing || entry[1].value !== owner
+            _prune_order_cache!()
+            entry = (WeakRef(owner), Dict{_OrderKey,Vector{Symbol}}())
+            _ORDER_CACHE[id] = entry
+        end
+        length(entry[2]) < _ORDER_CACHE_LIMIT || empty!(entry[2])
+        entry[2][key] = copy(elim)
+        return nothing
+    end
     return elim
 end
 
@@ -250,11 +351,13 @@ function _eliminate(A::_Arithmetic, fg::FactorGraph{T}, query, evidence, order,
     return result, elim, max_size, n_mult, width
 end
 
+# A posterior run applies the trust test to every product (`_Trusted`); an empty query
+# returns the unnormalised mass, which may legally be tiny (ADR 0011), and checks nothing.
 function _variable_elimination(fg::FactorGraph, query, evidence, order, observer)
-    result, elim, max_size, n_mult, width = _eliminate(_Linear(), fg, query, evidence,
-                                                       order,
+    A = isempty(query) ? _Linear() : _Trusted()
+    result, elim, max_size, n_mult, width = _eliminate(A, fg, query, evidence, order,
                                                        observer)
-    isempty(query) || (result = _normalized(_Linear(), result, evidence))
+    isempty(query) || (result = _normalized(A, result, evidence))
     observer === nothing || observer(:result, result)
     return result, InferenceDiagnostics(elim, max_size, n_mult, width)
 end
@@ -294,7 +397,9 @@ end
 
 The product of every factor of `fg`: the full (unnormalised) joint table, with
 scope in [`variables`](@ref) order. Exponential in the number of variables;
-this is the oracle that variable elimination is tested against.
+this is the oracle that variable elimination is tested against. Like [`multiply`](@ref),
+it raises [`FactorDomainError`](@ref) when an integer or rational product overflows the
+element type.
 """
 function joint_factor(fg::FactorGraph)
     isempty(fg.factors) && return unit_factor(eltype(fg))
@@ -306,17 +411,27 @@ end
 
 `P(query | evidence)` by conditioning and summing the full joint table.
 Same conventions as [`variable_elimination`](@ref) (including the
-unnormalised `P(evidence)` for an empty query), without diagnostics.
+unnormalised `P(evidence)` for an empty query, and the exact fallback when the binary64
+run is not trusted), without diagnostics.
 """
 function brute_force_marginal(fg::FactorGraph, query::AbstractVector{Symbol};
                               evidence::AbstractDict{Symbol,Symbol}=Dict{Symbol,Symbol}())
     _check_query(fg, query, evidence)
-    j = condition(joint_factor(fg), evidence)
-    m = reorder(marginalize(j, setdiff(j.vars, query)), query)
-    isempty(query) && return m
-    return _resolving_mass(() -> _posterior_normalize(m, evidence), evidence) do
+    isempty(query) && return _brute_force(_Linear(), fg, query, evidence)
+    ordinary = () -> _normalized(_Trusted(), _brute_force(_Trusted(), fg, query, evidence),
+                                 evidence)
+    return _resolving_mass(ordinary, evidence) do
         return first(_exact_variable_elimination(fg, query, evidence, MinFill()))
     end
+end
+
+# The unnormalised `P(query, evidence)` from the full joint table, multiplied in the order
+# of `joint_factor` (in the arithmetic `A`, which for a posterior checks every product).
+function _brute_force(A::_Linear, fg::FactorGraph, query, evidence)
+    joint = isempty(fg.factors) ? unit_factor(eltype(fg)) :
+            reorder(reduce((a, b) -> _multiply(A, a, b), fg.factors), variables(fg))
+    j = condition(joint, evidence)
+    return reorder(_project(A, j, collect(Symbol, query)), query)
 end
 function brute_force_marginal(fg::FactorGraph, query::Symbol; kwargs...)
     return brute_force_marginal(fg, [query]; kwargs...)

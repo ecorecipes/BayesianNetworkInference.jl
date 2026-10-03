@@ -87,10 +87,13 @@ are exact, while loopy beliefs are approximations. It has damping, a
 tolerance, an iteration cap and
 [`BPDiagnostics`](@ref). VE/JT posterior entry points reject globally zero mass,
 including disconnected components and all-observed cases, with
-`ImpossibleEvidenceError`. BP detects local zero-support failures, with the same
-error, but otherwise leaves global feasibility unknown unless
+`ImpossibleEvidenceError`. BP detects local zero-support failures -- an exactly zero
+message -- with the same error, but otherwise leaves global feasibility unknown unless
 `BeliefPropagation(check_evidence=true)` requests a VE feasibility pass.
-`evidence_checked` records that choice. Its residual is measured before damping
+`evidence_checked` records that choice, and that pass is the only exact computation BP
+runs: its potentials are rescaled by powers of two, and messages that would still leave
+binary64's normal range are recomputed in the log domain (`log_domain`), so its answer is
+always its own. Its residual is measured before damping
 in the message equations at the returned iterate, not from a tiny damped step,
 and is not a general bound on marginal error.
 
@@ -172,17 +175,35 @@ end
 ```
 
 Evidence that is merely rare is answered, not rejected (ADR 0014). A mass that is
-zero, subnormal or non-finite in binary64 does not decide impossibility, so
-variable elimination, the junction tree, brute force and belief propagation
-recompute such a query in exact arithmetic and return it with each cell correctly
-rounded: the Float64 nearest the exact posterior of the graph as bound (ADR 0016). The
-diagnostics' `exact_fallback` records it. Only that exact computation may raise
-`ImpossibleEvidenceError`, and only for evidence of probability exactly zero. The
+zero, subnormal or non-finite in binary64 does not decide impossibility, and a run in
+which a product of nonzero values fell below `floatmin` (subnormal, or rounded to zero)
+is not trusted even when its mass is normal. Variable elimination, the junction tree and
+brute force recompute such a query in exact arithmetic and return it with each cell
+correctly rounded: the Float64 nearest the exact posterior of the graph as bound (ADR
+0016). The diagnostics' `exact_fallback` records it. Only that exact computation may
+raise `ImpossibleEvidenceError`, and only for evidence of probability exactly zero.
+Belief propagation does not switch algorithms: it raises the same error for an exactly
+zero message, which on nonnegative factors proves the evidence impossible, and redoes
+untrusted message passing in the log domain. The
 opt-in [`LogVariableElimination`](@ref) and [`LogJunctionTree`](@ref) backends remain
 fast log-domain numerical backends, not correctly rounded. A model with tolerated entries in `[-atol, 0)` can
 leave a posterior's sign to the rounding; that raises `BayesianNetworks`'
-`IndeterminatePosteriorError` instead of returning a negative probability. An empty
+`IndeterminatePosteriorError` instead of returning a negative probability. At the model
+level every entry point follows the rule of `BayesianNetworks.marginal`: an entry counts only
+where it lies on a configuration consistent with the evidence whose other entries are
+nonzero, the posterior is then indeterminate if the evidence mass is within the tolerance
+budget of zero or a cell comes out negative, and a prior is exempt. An empty
 query never raises: it returns the unnormalised mass, which may be zero.
+
+Integer and rational factors never wrap. Base's machine integers wrap silently on
+overflow, so [`multiply`](@ref), [`marginalize`](@ref) and [`normalize`](@ref) compute
+such tables in checked arithmetic and raise [`FactorDomainError`](@ref) for a product, a
+sum or a quotient that the element type cannot hold, naming its cell and its exact value.
+A posterior entry point instead treats an integer or rational run that overflows as it
+treats an untrusted binary64 run: the exact fallback, which takes every entry at its exact
+value whatever the element type, answers it, correctly rounded to Float64. The empty query
+and [`calibrate`](@ref), whose results have the graph's own element type, report the
+overflow.
 
 ## References
 

@@ -224,3 +224,23 @@ end
     @test_throws InvalidAxisError tornado(fg, :B, :zz)
     @test_throws ScopeError predict(fg, [Dict(:A => :a)], :Z)
 end
+
+# Review of 2026-10-02, finding 6: the entry check iterated `CartesianIndices` of a table
+# whose rank is not part of its type, dispatching on every entry (about 150 times slower
+# than it needs to be, and allocating per entry). It now scans the entries as a vector.
+@testset "the FactorGraph entry check does not allocate per entry" begin
+    axes4 = [FiniteAxis(Symbol(:V, i), [Symbol(:s, k) for k in 1:10]) for i in 1:4]
+    f = Factor(axes4, rand(MersenneTwister(6), 10, 10, 10, 10))
+    check(f) = BayesianNetworkInference._check_factor_entries(f, 1e-8)
+    check(f)
+    @test (@allocated check(f)) < 1_000
+    # The offending entry is still reported with its cell.
+    bad = copy(f.table)
+    bad[3, 1, 4, 2] = -1.0
+    e = try
+        FactorGraph([Factor(axes4, bad)])
+    catch err
+        err
+    end
+    @test e isa FactorEntryError && Tuple(e.index) == (3, 1, 4, 2) && e.value == -1.0
+end
