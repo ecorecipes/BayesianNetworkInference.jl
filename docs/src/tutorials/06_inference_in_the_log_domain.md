@@ -315,29 +315,45 @@ probabilities.
 
 ## References
 
+```@raw html
 <div id="refs" class="references csl-bib-body hanging-indent">
+```
 
+```@raw html
 <div id="ref-Dechter1999" class="csl-entry">
+```
 
 Dechter, Rina. 1999. “Bucket Elimination: A Unifying Framework for
 Reasoning.” *Artificial Intelligence* 113 (1–2): 41–85.
 <https://doi.org/10.1016/S0004-3702(99)00059-4>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-KollerFriedman2009" class="csl-entry">
+```
 
 Koller, Daphne, and Nir Friedman. 2009. *Probabilistic Graphical Models:
 Principles and Techniques*. MIT Press.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-ShaferShenoy1990" class="csl-entry">
+```
 
 Shafer, Glenn R., and Prakash P. Shenoy. 1990. “Probability
 Propagation.” *Annals of Mathematics and Artificial Intelligence* 2:
 327–51. <https://doi.org/10.1007/BF01531015>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 </div>
+```

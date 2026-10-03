@@ -411,42 +411,62 @@ give the good-practice account of the whole life cycle, in which
 out-of-sample validation, calibration and a baseline comparison are
 quality gates rather than optional extras.
 
+```@raw html
 <div id="refs" class="references csl-bib-body hanging-indent">
+```
 
+```@raw html
 <div id="ref-Brier1950" class="csl-entry">
+```
 
 Brier, Glenn W. 1950. “Verification of Forecasts Expressed in Terms of
 Probability.” *Monthly Weather Review* 78 (1): 1–3.
 [https://doi.org/10.1175/1520-0493(1950)078\<0001:VOFEIT\>2.0.CO;2](https://doi.org/10.1175/1520-0493(1950)078<0001:VOFEIT>2.0.CO;2).
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-ChenPollino2012" class="csl-entry">
+```
 
 Chen, Serena H., and Carmel A. Pollino. 2012. “Good Practice in Bayesian
 Network Modelling.” *Environmental Modelling & Software* 37: 134–45.
 <https://doi.org/10.1016/j.envsoft.2012.03.016>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-GneitingRaftery2007" class="csl-entry">
+```
 
 Gneiting, Tilmann, and Adrian E. Raftery. 2007. “Strictly Proper Scoring
 Rules, Prediction, and Estimation.” *Journal of the American Statistical
 Association* 102 (477): 359–78.
 <https://doi.org/10.1198/016214506000001437>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-Marcot2012" class="csl-entry">
+```
 
 Marcot, Bruce G. 2012. “Metrics for Evaluating Performance and
 Uncertainty of Bayesian Network Models.” *Ecological Modelling* 230:
 50–62. <https://doi.org/10.1016/j.ecolmodel.2012.01.013>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-Marcot2006" class="csl-entry">
+```
 
 Marcot, Bruce G., J. Douglas Steventon, Glenn D. Sutherland, and Robert
 K. McCann. 2006. “Guidelines for Developing and Updating Bayesian Belief
@@ -454,6 +474,10 @@ Networks Applied to Ecological Modeling and Conservation.” *Canadian
 Journal of Forest Research* 36 (12): 3063–74.
 <https://doi.org/10.1139/x06-135>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 </div>
+```

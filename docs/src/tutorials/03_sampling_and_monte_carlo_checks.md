@@ -280,13 +280,21 @@ marginal in a single pass.
 
 ## References
 
+```@raw html
 <div id="refs" class="references csl-bib-body hanging-indent">
+```
 
+```@raw html
 <div id="ref-KollerFriedman2009" class="csl-entry">
+```
 
 Koller, Daphne, and Nir Friedman. 2009. *Probabilistic Graphical Models:
 Principles and Techniques*. MIT Press.
 
+```@raw html
 </div>
+```
 
+```@raw html
 </div>
+```

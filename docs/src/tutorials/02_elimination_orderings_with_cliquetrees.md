@@ -221,15 +221,23 @@ as an independent check on these exact answers.
 
 ## References
 
+```@raw html
 <div id="refs" class="references csl-bib-body hanging-indent">
+```
 
+```@raw html
 <div id="ref-CliqueTrees" class="csl-entry">
+```
 
 Samuelson, Richard, and James Fairbanks. 2026.
-*<span class="nocase">CliqueTrees.jl</span>: Tree Decompositions and
+*CliqueTrees.jl: Tree Decompositions and
 Elimination Orderings in Julia*.
 <https://github.com/AlgebraicJulia/CliqueTrees.jl>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 </div>
+```

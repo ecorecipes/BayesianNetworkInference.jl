@@ -466,24 +466,36 @@ CliqueTrees*, takes up.
 
 ## References
 
+```@raw html
 <div id="refs" class="references csl-bib-body hanging-indent">
+```
 
+```@raw html
 <div id="ref-Dechter1999" class="csl-entry">
+```
 
 Dechter, Rina. 1999. “Bucket Elimination: A Unifying Framework for
 Reasoning.” *Artificial Intelligence* 113 (1–2): 41–85.
 <https://doi.org/10.1016/S0004-3702(99)00059-4>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-KollerFriedman2009" class="csl-entry">
+```
 
 Koller, Daphne, and Nir Friedman. 2009. *Probabilistic Graphical Models:
 Principles and Techniques*. MIT Press.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-LauritzenSpiegelhalter1988" class="csl-entry">
+```
 
 Lauritzen, Steffen L., and David J. Spiegelhalter. 1988. “Local
 Computations with Probabilities on Graphical Structures and Their
@@ -491,14 +503,22 @@ Application to Expert Systems.” *Journal of the Royal Statistical
 Society, Series B* 50 (2): 157–224.
 <https://doi.org/10.1111/j.2517-6161.1988.tb01721.x>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-ZhangPoole1994" class="csl-entry">
+```
 
 Zhang, Nevin Lianwen, and David Poole. 1994. “A Simple Approach to
 Bayesian Network Computations.” *Proceedings of the Tenth Canadian
 Conference on Artificial Intelligence*, 171–78.
 
+```@raw html
 </div>
+```
 
+```@raw html
 </div>
+```

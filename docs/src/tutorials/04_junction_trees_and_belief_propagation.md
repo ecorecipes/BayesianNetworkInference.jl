@@ -430,26 +430,38 @@ network gives are any good.
 
 ## References
 
+```@raw html
 <div id="refs" class="references csl-bib-body hanging-indent">
+```
 
+```@raw html
 <div id="ref-JensenLauritzenOlesen1990" class="csl-entry">
+```
 
 Jensen, Finn V., Steffen L. Lauritzen, and Kristian G. Olesen. 1990.
 “Bayesian Updating in Causal Probabilistic Networks by Local
 Computations.” *Computational Statistics Quarterly* 4: 269–82.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-Kschischang2001" class="csl-entry">
+```
 
 Kschischang, Frank R., Brendan J. Frey, and Hans-Andrea Loeliger. 2001.
 “Factor Graphs and the Sum-Product Algorithm.” *IEEE Transactions on
 Information Theory* 47 (2): 498–519.
 <https://doi.org/10.1109/18.910572>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-LauritzenSpiegelhalter1988" class="csl-entry">
+```
 
 Lauritzen, Steffen L., and David J. Spiegelhalter. 1988. “Local
 Computations with Probabilities on Graphical Structures and Their
@@ -457,30 +469,46 @@ Application to Expert Systems.” *Journal of the Royal Statistical
 Society, Series B* 50 (2): 157–224.
 <https://doi.org/10.1111/j.2517-6161.1988.tb01721.x>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-MurphyWeissJordan1999" class="csl-entry">
+```
 
 Murphy, Kevin P., Yair Weiss, and Michael I. Jordan. 1999. “Loopy Belief
 Propagation for Approximate Inference: An Empirical Study.” *Proceedings
 of the Fifteenth Conference on Uncertainty in Artificial Intelligence
 (UAI 1999)*, 467–75.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-Pearl1988" class="csl-entry">
+```
 
 Pearl, Judea. 1988. *Probabilistic Reasoning in Intelligent Systems:
 Networks of Plausible Inference*. Morgan Kaufmann.
 
+```@raw html
 </div>
+```
 
+```@raw html
 <div id="ref-ShaferShenoy1990" class="csl-entry">
+```
 
 Shafer, Glenn R., and Prakash P. Shenoy. 1990. “Probability
 Propagation.” *Annals of Mathematics and Artificial Intelligence* 2:
 327–51. <https://doi.org/10.1007/BF01531015>.
 
+```@raw html
 </div>
+```
 
+```@raw html
 </div>
+```
