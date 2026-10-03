@@ -566,9 +566,10 @@ end
     rounded(w) = [nearest(exact(v) / sum(exact, w)) for v in w]
     a = FiniteAxis(:A, [:a0, :a1])
     b = FiniteAxis(:B, [:b0, :b1])
-    # BigFloat: 2^-(2^61 + 2^60) is a BigFloat, and its square underflows BigFloat's range,
-    # so the BigFloat mass is zero and the run is untrusted.
-    t = BigFloat(2)^(-(2^61 + 2^60))
+    # BigFloat: a power of two two thirds of the way down BigFloat's exponent range, which
+    # depends on the platform (MPFR's exponent is a C `long`, 32 bits on Windows), so its
+    # square underflows the range: the BigFloat mass is zero and the run is untrusted.
+    t = BigFloat(2)^(2 * (exponent(nextfloat(zero(BigFloat))) ÷ 3))
     @test t > 0 && iszero(t * t)
     tiny = FactorGraph([Factor(a, [t, 2t]), Factor(b, [t, t])])
     for backend in (VariableElimination(), JunctionTree())
