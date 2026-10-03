@@ -198,8 +198,17 @@ FiniteKernel(f_grass, [:Rain], :Grass) ≈ cpt(rain, grass, [0.9 0.1; 0.2 0.8]) 
 
 ## Vignettes
 
-Rendered vignettes live in [`vignettes/`](vignettes/) and are published in the
-[documentation](https://ecorecipes.github.io/BayesianNetworkInference.jl/).
+| # | Vignette | Description |
+|---|---|---|
+| 1 | [Factors and variable elimination](https://github.com/ecorecipes/BayesianNetworkInference.jl/blob/main/vignettes/01_factors_and_variable_elimination/01_factors_and_variable_elimination.md) | Factors versus kernels, the factor algebra, variable elimination against brute force, evidence and sampling checks |
+| 2 | [Elimination orderings with CliqueTrees](https://github.com/ecorecipes/BayesianNetworkInference.jl/blob/main/vignettes/02_elimination_orderings_with_cliquetrees/02_elimination_orderings_with_cliquetrees.md) | How the elimination order sets the cost, keeping query variables, and timing on a random network |
+| 3 | [Sampling and Monte Carlo checks](https://github.com/ecorecipes/BayesianNetworkInference.jl/blob/main/vignettes/03_sampling_and_monte_carlo_checks/03_sampling_and_monte_carlo_checks.md) | Ancestral sampling, convergence, conditional queries by rejection and interventions, checked against exact marginals |
+| 4 | [Junction trees and belief propagation](https://github.com/ecorecipes/BayesianNetworkInference.jl/blob/main/vignettes/04_junction_trees_and_belief_propagation/04_junction_trees_and_belief_propagation.md) | Junction-tree calibration for all marginals, and belief propagation on trees and loopy graphs |
+| 5 | [Validation and scoring](https://github.com/ecorecipes/BayesianNetworkInference.jl/blob/main/vignettes/05_validation_and_scoring/05_validation_and_scoring.md) | Held-out prediction, proper scoring rules, calibration, beating the prior and mutual information |
+| 6 | [Inference in the log domain](https://github.com/ecorecipes/BayesianNetworkInference.jl/blob/main/vignettes/06_inference_in_the_log_domain/06_inference_in_the_log_domain.md) | Evidence that underflows Float64, telling rare from impossible evidence, and every marginal at once |
+
+Each vignette is also published as a tutorial in the [documentation](https://ecorecipes.github.io/BayesianNetworkInference.jl/);
+the sources are the `.qmd` files in [`vignettes/`](vignettes/).
 
 ## References
 
