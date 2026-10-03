@@ -1,0 +1,619 @@
+% Bibliography for the ecorecipes compositional Bayesian-network ecosystem.
+%
+% Canonical copy lives at docs/references.bib in the workspace and is copied into each
+% package's vignettes/ and docs/src/ by scripts/sync_references.jl. Cite with pandoc
+% citation markers in quarto vignettes and with DocumenterCitations link syntax in
+% docstrings. (Citation markers are not spelled out here: BibParser.jl scans the whole
+% file for entry sigils and warns about ones inside comments.)
+
+% ---------------------------------------------------------------- ecological observations
+@article{Gorman2014,
+  author  = {Gorman, Kristen B. and Williams, Tony D. and Fraser, William R.},
+  title   = {Ecological sexual dimorphism and environmental variability within a community of {Antarctic} penguins (genus {Pygoscelis})},
+  journal = {PLOS ONE},
+  volume  = {9},
+  number  = {3},
+  pages   = {e90081},
+  year    = {2014},
+  doi     = {10.1371/journal.pone.0090081}
+}
+
+@manual{Horst2020,
+  author = {Horst, Allison Marie and Hill, Alison Presmanes and Gorman, Kristen B.},
+  title  = {palmerpenguins: Palmer Archipelago (Antarctica) penguin data},
+  year   = {2020},
+  doi    = {10.5281/zenodo.3960218},
+  url    = {https://allisonhorst.github.io/palmerpenguins/}
+}
+
+% ---------------------------------------------------------------- category theory
+@misc{Fong2012,
+  author       = {Fong, Brendan},
+  title        = {Causal Theories: A Categorical Perspective on {B}ayesian Networks},
+  year         = {2012},
+  eprint       = {1301.6201},
+  archivePrefix= {arXiv},
+  primaryClass = {math.PR},
+  note         = {Master's thesis, University of Oxford}
+}
+
+@article{Fritz2020,
+  author  = {Fritz, Tobias},
+  title   = {A synthetic approach to {M}arkov kernels, conditional independence and theorems on sufficient statistics},
+  journal = {Advances in Mathematics},
+  volume  = {370},
+  pages   = {107239},
+  year    = {2020},
+  doi     = {10.1016/j.aim.2020.107239}
+}
+
+@article{ChoJacobs2019,
+  author  = {Cho, Kenta and Jacobs, Bart},
+  title   = {Disintegration and {B}ayesian inversion via string diagrams},
+  journal = {Mathematical Structures in Computer Science},
+  volume  = {29},
+  number  = {7},
+  pages   = {938--971},
+  year    = {2019},
+  doi     = {10.1017/S0960129518000488}
+}
+
+@inproceedings{JacobsKissingerZanasi2019,
+  author    = {Jacobs, Bart and Kissinger, Aleks and Zanasi, Fabio},
+  title     = {Causal Inference by String Diagram Surgery},
+  booktitle = {Foundations of Software Science and Computation Structures (FoSSaCS 2019)},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {11425},
+  pages     = {313--329},
+  year      = {2019},
+  doi       = {10.1007/978-3-030-17127-8_18}
+}
+
+@misc{LorenzTull2023,
+  author       = {Lorenz, Robin and Tull, Sean},
+  title        = {Causal models in string diagrams},
+  year         = {2023},
+  eprint       = {2304.07638},
+  archivePrefix= {arXiv},
+  primaryClass = {cs.AI}
+}
+
+@article{BaezCourser2020,
+  author  = {Baez, John C. and Courser, Kenny},
+  title   = {Structured cospans},
+  journal = {Theory and Applications of Categories},
+  volume  = {35},
+  number  = {48},
+  pages   = {1771--1822},
+  year    = {2020}
+}
+
+@misc{LorenzinZanasi2025,
+  author       = {Lorenzin, Antonio and Zanasi, Fabio},
+  title        = {{B}ayesian Networks, {M}arkov Networks, Moralisation, Triangulation: a Categorical Perspective},
+  year         = {2025},
+  eprint       = {2512.09908},
+  archivePrefix= {arXiv},
+  primaryClass = {cs.LO}
+}
+
+@article{Fox1976,
+  author  = {Fox, Thomas},
+  title   = {Coalgebras and cartesian categories},
+  journal = {Communications in Algebra},
+  volume  = {4},
+  number  = {7},
+  pages   = {665--667},
+  year    = {1976},
+  doi     = {10.1080/00927877608822127}
+}
+
+@article{PattersonLynchFairbanks2022,
+  author  = {Patterson, Evan and Lynch, Owen and Fairbanks, James},
+  title   = {Categorical Data Structures for Technical Computing},
+  journal = {Compositionality},
+  volume  = {4},
+  number  = {5},
+  year    = {2022},
+  doi     = {10.32408/compositionality-4-5}
+}
+
+@article{Libkind2022,
+  author  = {Libkind, Sophie and Baas, Andrew and Halter, Micah and Patterson, Evan and Fairbanks, James P.},
+  title   = {An algebraic framework for structured epidemic modelling},
+  journal = {Philosophical Transactions of the Royal Society A},
+  volume  = {380},
+  number  = {2233},
+  pages   = {20210309},
+  year    = {2022},
+  doi     = {10.1098/rsta.2021.0309}
+}
+
+% ---------------------------------------------------- probabilistic graphical models
+@book{Pearl2009,
+  author    = {Pearl, Judea},
+  title     = {Causality: Models, Reasoning, and Inference},
+  edition   = {2},
+  publisher = {Cambridge University Press},
+  year      = {2009},
+  doi       = {10.1017/CBO9780511803161}
+}
+
+@book{Pearl1988,
+  author    = {Pearl, Judea},
+  title     = {Probabilistic Reasoning in Intelligent Systems: Networks of Plausible Inference},
+  publisher = {Morgan Kaufmann},
+  year      = {1988}
+}
+
+@book{KollerFriedman2009,
+  author    = {Koller, Daphne and Friedman, Nir},
+  title     = {Probabilistic Graphical Models: Principles and Techniques},
+  publisher = {MIT Press},
+  year      = {2009}
+}
+
+@article{LauritzenSpiegelhalter1988,
+  author  = {Lauritzen, Steffen L. and Spiegelhalter, David J.},
+  title   = {Local computations with probabilities on graphical structures and their application to expert systems},
+  journal = {Journal of the Royal Statistical Society, Series B},
+  volume  = {50},
+  number  = {2},
+  pages   = {157--224},
+  year    = {1988},
+  doi     = {10.1111/j.2517-6161.1988.tb01721.x}
+}
+
+@article{ShaferShenoy1990,
+  author  = {Shafer, Glenn R. and Shenoy, Prakash P.},
+  title   = {Probability propagation},
+  journal = {Annals of Mathematics and Artificial Intelligence},
+  volume  = {2},
+  pages   = {327--351},
+  year    = {1990},
+  doi     = {10.1007/BF01531015}
+}
+
+@article{JensenLauritzenOlesen1990,
+  author  = {Jensen, Finn V. and Lauritzen, Steffen L. and Olesen, Kristian G.},
+  title   = {Bayesian updating in causal probabilistic networks by local computations},
+  journal = {Computational Statistics Quarterly},
+  volume  = {4},
+  pages   = {269--282},
+  year    = {1990}
+}
+
+@article{Dechter1999,
+  author  = {Dechter, Rina},
+  title   = {Bucket elimination: A unifying framework for reasoning},
+  journal = {Artificial Intelligence},
+  volume  = {113},
+  number  = {1--2},
+  pages   = {41--85},
+  year    = {1999},
+  doi     = {10.1016/S0004-3702(99)00059-4}
+}
+
+@inproceedings{ZhangPoole1994,
+  author    = {Zhang, Nevin Lianwen and Poole, David},
+  title     = {A simple approach to {B}ayesian network computations},
+  booktitle = {Proceedings of the Tenth Canadian Conference on Artificial Intelligence},
+  pages     = {171--178},
+  year      = {1994}
+}
+
+@article{Kschischang2001,
+  author  = {Kschischang, Frank R. and Frey, Brendan J. and Loeliger, Hans-Andrea},
+  title   = {Factor graphs and the sum-product algorithm},
+  journal = {IEEE Transactions on Information Theory},
+  volume  = {47},
+  number  = {2},
+  pages   = {498--519},
+  year    = {2001},
+  doi     = {10.1109/18.910572}
+}
+
+@inproceedings{MurphyWeissJordan1999,
+  author    = {Murphy, Kevin P. and Weiss, Yair and Jordan, Michael I.},
+  title     = {Loopy belief propagation for approximate inference: An empirical study},
+  booktitle = {Proceedings of the Fifteenth Conference on Uncertainty in Artificial Intelligence (UAI 1999)},
+  pages     = {467--475},
+  year      = {1999}
+}
+
+% ------------------------------------------------------------------ decision analysis
+@article{HowardMatheson2005,
+  author  = {Howard, Ronald A. and Matheson, James E.},
+  title   = {Influence Diagrams},
+  journal = {Decision Analysis},
+  volume  = {2},
+  number  = {3},
+  pages   = {127--143},
+  year    = {2005},
+  doi     = {10.1287/deca.1050.0020}
+}
+
+@article{Shachter1986,
+  author  = {Shachter, Ross D.},
+  title   = {Evaluating Influence Diagrams},
+  journal = {Operations Research},
+  volume  = {34},
+  number  = {6},
+  pages   = {871--882},
+  year    = {1986},
+  doi     = {10.1287/opre.34.6.871}
+}
+
+@inproceedings{JensenJensenDittmer1994,
+  author    = {Jensen, Frank and Jensen, Finn V. and Dittmer, S{\o}ren L.},
+  title     = {From influence diagrams to junction trees},
+  booktitle = {Proceedings of the Tenth Conference on Uncertainty in Artificial Intelligence (UAI 1994)},
+  pages     = {367--373},
+  year      = {1994}
+}
+
+@article{LauritzenNilsson2001,
+  author  = {Lauritzen, Steffen L. and Nilsson, Dennis},
+  title   = {Representing and Solving Decision Problems with Limited Information},
+  journal = {Management Science},
+  volume  = {47},
+  number  = {9},
+  pages   = {1235--1251},
+  year    = {2001},
+  doi     = {10.1287/mnsc.47.9.1235.9779}
+}
+
+@article{Howard1966,
+  author  = {Howard, Ronald A.},
+  title   = {Information Value Theory},
+  journal = {IEEE Transactions on Systems Science and Cybernetics},
+  volume  = {2},
+  number  = {1},
+  pages   = {22--26},
+  year    = {1966},
+  doi     = {10.1109/TSSC.1966.300074}
+}
+
+@book{Raiffa1968,
+  author    = {Raiffa, Howard},
+  title     = {Decision Analysis: Introductory Lectures on Choices under Uncertainty},
+  publisher = {Addison-Wesley},
+  year      = {1968}
+}
+
+@article{BielzaGomezShenoy2011,
+  author  = {Bielza, Concha and G{\'o}mez, Manuel and Shenoy, Prakash P.},
+  title   = {A review of representation issues and modeling challenges with influence diagrams},
+  journal = {Omega},
+  volume  = {39},
+  number  = {3},
+  pages   = {227--241},
+  year    = {2011},
+  doi     = {10.1016/j.omega.2010.07.003}
+}
+
+@article{TatmanShachter1990,
+  author  = {Tatman, Joseph A. and Shachter, Ross D.},
+  title   = {Dynamic programming and influence diagrams},
+  journal = {IEEE Transactions on Systems, Man, and Cybernetics},
+  volume  = {20},
+  number  = {2},
+  pages   = {365--379},
+  year    = {1990},
+  doi     = {10.1109/21.52545}
+}
+
+@article{Salo2022,
+  author  = {Salo, Ahti and Andelmin, Juho and Oliveira, Fabricio},
+  title   = {Decision programming for mixed-integer multi-stage optimization under uncertainty},
+  journal = {European Journal of Operational Research},
+  volume  = {299},
+  number  = {2},
+  pages   = {550--565},
+  year    = {2022},
+  doi     = {10.1016/j.ejor.2021.12.013}
+}
+
+% ------------------------------------------------------------------------- ecology
+@article{McCannMarcotEllis2006,
+  author  = {McCann, Robert K. and Marcot, Bruce G. and Ellis, Rick},
+  title   = {Bayesian belief networks: applications in ecology and natural resource management},
+  journal = {Canadian Journal of Forest Research},
+  volume  = {36},
+  number  = {12},
+  pages   = {3053--3062},
+  year    = {2006},
+  doi     = {10.1139/x06-238}
+}
+
+@article{Marcot2006,
+  author  = {Marcot, Bruce G. and Steventon, J. Douglas and Sutherland, Glenn D. and McCann, Robert K.},
+  title   = {Guidelines for developing and updating {B}ayesian belief networks applied to ecological modeling and conservation},
+  journal = {Canadian Journal of Forest Research},
+  volume  = {36},
+  number  = {12},
+  pages   = {3063--3074},
+  year    = {2006},
+  doi     = {10.1139/x06-135}
+}
+
+@article{ChenPollino2012,
+  author  = {Chen, Serena H. and Pollino, Carmel A.},
+  title   = {Good practice in {B}ayesian network modelling},
+  journal = {Environmental Modelling \& Software},
+  volume  = {37},
+  pages   = {134--145},
+  year    = {2012},
+  doi     = {10.1016/j.envsoft.2012.03.016}
+}
+
+@article{Marcot2012,
+  author  = {Marcot, Bruce G.},
+  title   = {Metrics for evaluating performance and uncertainty of {B}ayesian network models},
+  journal = {Ecological Modelling},
+  volume  = {230},
+  pages   = {50--62},
+  year    = {2012},
+  doi     = {10.1016/j.ecolmodel.2012.01.013}
+}
+
+@article{Kaikkonen2021,
+  author  = {Kaikkonen, Laura and Parviainen, Tuuli and Rahikainen, Mika and Uusitalo, Laura and Lehikoinen, Annukka},
+  title   = {Bayesian Networks in Environmental Risk Assessment: A Review},
+  journal = {Integrated Environmental Assessment and Management},
+  volume  = {17},
+  number  = {1},
+  pages   = {62--78},
+  year    = {2021},
+  doi     = {10.1002/ieam.4332}
+}
+
+@article{Moe2021,
+  author  = {Moe, S. Jannicke and Carriger, John F. and Glendell, Miriam},
+  title   = {Increased Use of {B}ayesian Network Models Has Improved Environmental Risk Assessments},
+  journal = {Integrated Environmental Assessment and Management},
+  volume  = {17},
+  number  = {1},
+  pages   = {53--61},
+  year    = {2021},
+  doi     = {10.1002/ieam.4369}
+}
+
+@article{Runge2011,
+  author  = {Runge, Michael C. and Converse, Sarah J. and Lyons, James E.},
+  title   = {Which uncertainty? Using expert elicitation and expected value of information to design an adaptive program},
+  journal = {Biological Conservation},
+  volume  = {144},
+  number  = {4},
+  pages   = {1214--1223},
+  year    = {2011},
+  doi     = {10.1016/j.biocon.2010.12.020}
+}
+
+@article{Newton2007,
+  author  = {Newton, Adrian C. and Stewart, Gavin B. and Diaz, Anita and Golicher, Duncan and Pullin, Andrew S.},
+  title   = {Bayesian Belief Networks as a tool for evidence-based conservation management},
+  journal = {Journal for Nature Conservation},
+  volume  = {15},
+  number  = {2},
+  pages   = {144--160},
+  year    = {2007},
+  doi     = {10.1016/j.jnc.2007.03.001}
+}
+
+@article{Uusitalo2007,
+  author  = {Uusitalo, Laura},
+  title   = {Advantages and challenges of {B}ayesian networks in environmental modelling},
+  journal = {Ecological Modelling},
+  volume  = {203},
+  number  = {3--4},
+  pages   = {312--318},
+  year    = {2007},
+  doi     = {10.1016/j.ecolmodel.2006.11.018}
+}
+
+@article{Kuhnert2010,
+  author  = {Kuhnert, Petra M. and Martin, Tara G. and Griffiths, Shane P.},
+  title   = {A guide to eliciting and using expert knowledge in {B}ayesian ecological models},
+  journal = {Ecology Letters},
+  volume  = {13},
+  number  = {7},
+  pages   = {900--914},
+  year    = {2010},
+  doi     = {10.1111/j.1461-0248.2010.01477.x}
+}
+
+@article{Death2015,
+  author  = {Death, Russell G. and Death, Fiona and Stubbington, Rachel and Joy, Michael K. and van den Belt, Marjan},
+  title   = {How good are {B}ayesian belief networks for environmental management? A test with data from an agricultural river catchment},
+  journal = {Freshwater Biology},
+  volume  = {60},
+  number  = {11},
+  pages   = {2297--2309},
+  year    = {2015},
+  doi     = {10.1111/fwb.12655}
+}
+
+@article{Landuyt2013,
+  author  = {Landuyt, Dries and Broekx, Steven and D'hondt, Rob and Engelen, Guy and Aertsens, Joris and Goethals, Peter L. M.},
+  title   = {A review of {B}ayesian belief networks in ecosystem service modelling},
+  journal = {Environmental Modelling \& Software},
+  volume  = {46},
+  pages   = {1--11},
+  year    = {2013},
+  doi     = {10.1016/j.envsoft.2013.03.017}
+}
+
+@article{Kotalik2026,
+  author  = {Kotalik, Christopher J. and Rowland, Freya E. and Marcot, Bruce G. and others},
+  title   = {Causal networks to inform decisions for ecological restoration},
+  journal = {Environmental Management},
+  volume  = {76},
+  number  = {7},
+  year    = {2026},
+  doi     = {10.59381/ofwegrfqyo},
+  note    = {Model published in the BNMA repository, record 2893}
+}
+
+% ------------------------------------------------------------- scoring and validation
+@article{Brier1950,
+  author  = {Brier, Glenn W.},
+  title   = {Verification of forecasts expressed in terms of probability},
+  journal = {Monthly Weather Review},
+  volume  = {78},
+  number  = {1},
+  pages   = {1--3},
+  year    = {1950},
+  doi     = {10.1175/1520-0493(1950)078<0001:VOFEIT>2.0.CO;2}
+}
+
+@article{GneitingRaftery2007,
+  author  = {Gneiting, Tilmann and Raftery, Adrian E.},
+  title   = {Strictly Proper Scoring Rules, Prediction, and Estimation},
+  journal = {Journal of the American Statistical Association},
+  volume  = {102},
+  number  = {477},
+  pages   = {359--378},
+  year    = {2007},
+  doi     = {10.1198/016214506000001437}
+}
+
+% ------------------------------------------------------------ software and file formats
+@article{Scutari2010,
+  author  = {Scutari, Marco},
+  title   = {Learning {B}ayesian Networks with the {bnlearn} {R} Package},
+  journal = {Journal of Statistical Software},
+  volume  = {35},
+  number  = {3},
+  pages   = {1--22},
+  year    = {2010},
+  doi     = {10.18637/jss.v035.i03}
+}
+
+@techreport{Cozman1998,
+  author      = {Cozman, Fabio Gagliardi},
+  title       = {The Interchange Format for {B}ayesian Networks, version 0.15},
+  institution = {Carnegie Mellon University},
+  year        = {1998},
+  url         = {http://www.cs.cmu.edu/~fgcozman/Research/InterchangeFormat/}
+}
+
+@techreport{Kadie2001,
+  author      = {Kadie, Carl M. and Hovel, David and Horvitz, Eric},
+  title       = {{MSBNx}: A Component-Centric Toolkit for Modeling and Inference with {B}ayesian Networks},
+  institution = {Microsoft Research},
+  number      = {MSR-TR-2001-67},
+  year        = {2001}
+}
+
+@misc{NeticaFileFormats,
+  author = {{Norsys Software Corp.}},
+  title  = {Netica file formats},
+  year   = {2024},
+  url    = {https://www.norsys.com/WebHelp/NETICA/X_File_Formats.htm}
+}
+
+@misc{GeNIeDocs,
+  author = {{BayesFusion, LLC}},
+  title  = {{GeNIe} Modeler and {SMILE} Engine documentation},
+  year   = {2025},
+  url    = {https://support.bayesfusion.com/docs/}
+}
+
+@manual{HuginNET,
+  author       = {{HUGIN EXPERT A/S}},
+  title        = {{HUGIN} {API} Reference Manual: The {NET} Language},
+  year         = {2024},
+  url          = {https://download.hugin.com/webdocs/manuals/api-manual.pdf}
+}
+
+@misc{UAIFormat,
+  author = {{UAI Inference Competition}},
+  title  = {Model file format},
+  year   = {2022},
+  url    = {https://uaicompetition.github.io/uci-2022/file-formats/model-format/}
+}
+
+@inproceedings{deMouraUllrich2021,
+  author    = {de Moura, Leonardo and Ullrich, Sebastian},
+  title     = {The {L}ean 4 Theorem Prover and Programming Language},
+  booktitle = {Automated Deduction (CADE 28)},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {12699},
+  pages     = {625--635},
+  year      = {2021},
+  doi       = {10.1007/978-3-030-79876-5_37}
+}
+
+@inproceedings{Mathlib2020,
+  author    = {{The mathlib Community}},
+  title     = {The {Lean} Mathematical Library},
+  booktitle = {Proceedings of the 9th ACM SIGPLAN International Conference on Certified Programs and Proofs (CPP 2020)},
+  pages     = {367--381},
+  year      = {2020},
+  doi       = {10.1145/3372885.3373824}
+}
+
+@misc{CliqueTrees,
+  author = {Samuelson, Richard and Fairbanks, James},
+  title  = {{CliqueTrees.jl}: tree decompositions and elimination orderings in {J}ulia},
+  year   = {2026},
+  url    = {https://github.com/AlgebraicJulia/CliqueTrees.jl}
+}
+
+@misc{BNMA,
+  author = {{BNMA}},
+  title  = {The {B}ayesian Network Model Archive},
+  year   = {2026},
+  url    = {https://bnma.co/bnrepo/}
+}
+
+@misc{Leonelli2025,
+  author = {Leonelli, Manuele},
+  title  = {{bnRep}: A repository of {B}ayesian networks from the academic literature},
+  year   = {2025},
+  url    = {https://github.com/manueleleonelli/bnRep}
+}
+
+@inproceedings{Blackwell1951,
+  author    = {Blackwell, David},
+  title     = {Comparison of experiments},
+  booktitle = {Proceedings of the Second Berkeley Symposium on Mathematical Statistics
+               and Probability},
+  editor    = {Neyman, Jerzy},
+  pages     = {93--102},
+  publisher = {University of California Press},
+  address   = {Berkeley},
+  year      = {1951}
+}
+
+@article{Blackwell1953,
+  author  = {Blackwell, David},
+  title   = {Equivalent comparisons of experiments},
+  journal = {Annals of Mathematical Statistics},
+  volume  = {24},
+  number  = {2},
+  pages   = {265--272},
+  year    = {1953},
+  doi     = {10.1214/aoms/1177729032}
+}
+
+@inproceedings{SlindNorrish2008,
+  author    = {Slind, Konrad and Norrish, Michael},
+  title     = {A brief overview of {HOL4}},
+  booktitle = {Theorem Proving in Higher Order Logics ({TPHOLs} 2008)},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {5170},
+  pages     = {28--32},
+  publisher = {Springer},
+  year      = {2008},
+  doi       = {10.1007/978-3-540-71067-7_6}
+}
+
+@misc{RocqProver,
+  author = {{The Rocq Development Team}},
+  title  = {The {R}ocq {P}rover},
+  note   = {Concept DOI, resolving to the latest release; the concordance used Rocq 9.2},
+  doi    = {10.5281/zenodo.1003420},
+  url    = {https://rocq-prover.org}
+}
