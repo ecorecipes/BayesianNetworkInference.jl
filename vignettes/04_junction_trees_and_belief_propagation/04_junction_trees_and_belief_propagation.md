@@ -393,8 +393,8 @@ foreach(println, rows)
 ```
 
     (backend = :JunctionTree, seconds = 0.001, max_error = 2.22e-16)
-    (backend = :VariableElimination, seconds = 0.0187, max_error = 0.0)
-    (backend = :BeliefPropagation, seconds = 0.0044, max_error = 0.0521)
+    (backend = :VariableElimination, seconds = 0.0189, max_error = 0.0)
+    (backend = :BeliefPropagation, seconds = 0.0046, max_error = 0.0521)
 
     (julia = "1.12.7", cpu = "apple-m1", threads = 1, repetitions = 3, statistic = "minimum after warm-up")
 

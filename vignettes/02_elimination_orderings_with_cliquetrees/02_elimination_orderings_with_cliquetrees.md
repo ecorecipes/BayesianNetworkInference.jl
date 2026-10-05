@@ -161,9 +161,9 @@ foreach(println, results)
  repetitions = 1, statistic = "single run after warm-up")
 ```
 
-    (strategy = MinFill, width = 4, max_factor_size = 32, multiplications = 59, seconds = 0.0006)
-    (strategy = MinDegree, width = 4, max_factor_size = 32, multiplications = 59, seconds = 0.0004)
-    (strategy = AMDOrder, width = 4, max_factor_size = 32, multiplications = 59, seconds = 0.0004)
+    (strategy = MinFill, width = 4, max_factor_size = 32, multiplications = 59, seconds = 0.0112)
+    (strategy = MinDegree, width = 4, max_factor_size = 32, multiplications = 59, seconds = 0.0122)
+    (strategy = AMDOrder, width = 4, max_factor_size = 32, multiplications = 59, seconds = 0.0112)
 
     (julia = "1.12.7", cpu = "apple-m1", threads = 1, repetitions = 1, statistic = "single run after warm-up")
 
@@ -180,7 +180,7 @@ t = @elapsed post_rev, d_rev = variable_elimination(big, query; order=reverse_or
 (width=d_rev.treewidth, max_factor_size=d_rev.max_factor_size, seconds=round(t; digits=4))
 ```
 
-    (width = 7, max_factor_size = 256, seconds = 0.5805)
+    (width = 7, max_factor_size = 256, seconds = 0.5008)
 
 All orders give the same posterior:
 
