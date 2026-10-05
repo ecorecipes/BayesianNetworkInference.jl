@@ -39,7 +39,10 @@ jobs:
         # text/math fonts; the remaining packages are used by the quarto template.
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq librsvg2-bin
-          tlmgr install stix2-otf koma-script fvextra
+          # TinyTeX (installed by quarto-actions/setup) is not on PATH by default.
+          tl=$(dirname "$(ls -d "$HOME"/.TinyTeX/bin/*/tlmgr | head -1)")
+          echo "$tl" >> "$GITHUB_PATH"
+          "$tl/tlmgr" install stix2-otf koma-script fvextra
       - name: Fetch JuliaMono
         # The PDF format uses JuliaMono (SIL OFL) as the monospace font, looked up
         # via fontspec at ../../fonts/JuliaMono/ relative to vignettes/ (see
