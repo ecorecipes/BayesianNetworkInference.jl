@@ -42,6 +42,9 @@ jobs:
           # TinyTeX (installed by quarto-actions/setup) is not on PATH by default.
           tl=$(dirname "$(ls -d "$HOME"/.TinyTeX/bin/*/tlmgr | head -1)")
           echo "$tl" >> "$GITHUB_PATH"
+          # TinyTeX's repository moves ahead of the bundled tlmgr, which then refuses to
+          # install anything until it has updated itself.
+          "$tl/tlmgr" update --self
           "$tl/tlmgr" install stix2-otf koma-script fvextra
       - name: Fetch JuliaMono
         # The PDF format uses JuliaMono (SIL OFL) as the monospace font, looked up
