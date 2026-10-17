@@ -132,13 +132,14 @@ general, evidence composition, and the refinement to the Julia implementation al
 
 The package was built on 2026-10-16 (`CategoricalInfluenceDiagrams.jl`, milestones M0 to M5 of
 `docs/OPEN-INFLUENCE-DIAGRAMS-PLAN-2026-10-16.md`). The decisions above stand. Building them
-settled five points that the original record left open or stated differently.
+settled seven points that the original record left open or stated differently.
 
 1. **Where the flags live.** Observability is stored beside the structured cospan, one flag per
    interface position, not as an attribute of the feet. The feet therefore stay the
    `VariableSpace` ACSets of `CategoricalBayesianNetworks.jl`, unchanged. `Open` declares
-   variables observed by name (`observed = [...]`), and every other interface variable is
-   hidden.
+   variables observed by name (`observed = [...]`, on every foot a name is on, or
+   `observed = (inputs = [...], outputs = [...])`, foot by foot; see item 6), and every
+   other interface variable is hidden.
 2. **The mismatch error.** Flags that differ raise a new `ObservabilityMismatchError`, after
    `InterfaceMismatchError` has compared names, states and references. `InterfaceMismatchError`
    was not reused because its vocabulary of differences is closed and carries no variable.
@@ -161,3 +162,23 @@ settled five points that the original record left open or stated differently.
    the contextual identity needs the suffix's kernel to be normalised, which every
    interpreted diagram satisfies. Eight SA-Pass claims (`cid.*`) tie the prose to these
    theorems.
+6. **Flags may differ between the feet.** A variable on both feet may be observed on one and
+   hidden on the other. Observed on input and hidden on output, the boundary forgets it: no
+   later decision may read it. Hidden on input and observed on output, the component reveals
+   it, a perfect observation inside the component, although its own decisions still may not
+   read it (rule 3 concerns inputs). Neither weakens the rules, because every composite is
+   validated again: a downstream decision that reads a variable the composite's input foot
+   hides fails rule 3 there. For the same reason `glue` and `oapply` validate their
+   operands, as `compose` and `otimes` do: gluing can make a hidden input internal, and a
+   decision of an unvalidated operand that read it would otherwise pass. `validate = false`
+   remains the deliberate way around the checks.
+7. **Contextual optimisation is `InfluenceDiagrams.jl`'s search with a context.**
+   `InfluenceDiagrams.jl` gained `DecisionContext(prior, terminal)`: a joint prior over a
+   diagram's exogenous variables (chance variables without a mechanism), which the model may
+   then have, and a terminal utility. `ExhaustivePolicySearch` and `expected_utility` take
+   it; decision variable elimination and evidence do not. `contextual_optimize` builds the
+   context from its prior over the input foot and its continuation over the output foot and
+   delegates the search; its `brute_force` path, scored through `interpret`, is kept as an
+   independent check. It requires unique decision, variable and utility names, because the
+   search keys policies and tables by name; `interpret` and `contextual_value` do not. Priors are checked by one rule in both packages: entries
+   nonnegative and their sum within `atol` of one.
