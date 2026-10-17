@@ -1,6 +1,6 @@
 # ADR 0018: Open influence diagrams and their compositional semantics
 
-Date: 2026-10-16. Status: accepted (2026-10-16).
+Date: 2026-10-16. Status: accepted (2026-10-16); amended 2026-10-17 (see Amendment).
 
 ## Context
 
@@ -60,7 +60,8 @@ general, evidence composition, and the refinement to the Julia implementation al
      with the same multi-object feet as open Bayesian networks.
    - Each boundary variable additionally carries an **observability** flag: `:observed`
      (remembered information a later decision may read) or `:hidden`. Two feet with equal
-     variables and states but different flags do not match (`InterfaceMismatchError`).
+     variables and states but different flags do not match (`ObservabilityMismatchError`;
+     see Amendment).
    - The typed-interface rule of `CategoricalBayesianNetworks.jl` extends as follows:
      1. Every variable has at most one generator, a chance mechanism or a decision.
      2. An input-foot variable has no generator in the apex.
@@ -126,3 +127,37 @@ general, evidence composition, and the refinement to the Julia implementation al
   reward component. Its relation to the `(φ, ψ)` valuations is documented, not merged.
 - **The bundle stays frozen.** This ADR supersedes none of it. It turns the parts of its
   results that fit a general typed syntax into package code and package proofs.
+
+## Amendment (2026-10-17)
+
+The package was built on 2026-10-16 (`CategoricalInfluenceDiagrams.jl`, milestones M0 to M5 of
+`docs/OPEN-INFLUENCE-DIAGRAMS-PLAN-2026-10-16.md`). The decisions above stand. Building them
+settled five points that the original record left open or stated differently.
+
+1. **Where the flags live.** Observability is stored beside the structured cospan, one flag per
+   interface position, not as an attribute of the feet. The feet therefore stay the
+   `VariableSpace` ACSets of `CategoricalBayesianNetworks.jl`, unchanged. `Open` declares
+   variables observed by name (`observed = [...]`), and every other interface variable is
+   hidden.
+2. **The mismatch error.** Flags that differ raise a new `ObservabilityMismatchError`, after
+   `InterfaceMismatchError` has compared names, states and references. `InterfaceMismatchError`
+   was not reused because its vocabulary of differences is closed and carries no variable.
+3. **Rule 6 is checked on composites, along a partial order.** No-forgetting concerns a
+   composite and its components, so `compose`, `glue`, `otimes` and `oapply` check it, and
+   `validation_errors` of a single diagram does not. A decision precedes another when a
+   directed path of causal, information or precedence arcs joins their actions. The linear
+   order of `InfluenceDiagrams.jl`'s `is_no_forgetting` would make any tensor of two diagrams
+   with decisions fail. The two notions agree when paths order the decisions totally.
+   `no_forgetting = false` opts out and yields a limited-memory composite.
+4. **Strategies.** A strategy is `InfluenceDiagrams.jl`'s `Strategy`, keyed by decision name.
+   `merge_strategies` is the disjoint union and raises `DuplicatePolicyError` on a name in
+   two components. Stochastic policies are refused, as decision 4 requires.
+5. **What the proofs cover.** In Lean, open influence diagrams are ADR 0010's open nets with
+   decision labels and utility generators, *not quotiented* by isomorphism, so functoriality
+   of `interpret` is a set of equations on representatives rather than a Mathlib functor. The
+   semantics does not read observability flags. The two obstructions are stated as
+   reward-kernel tables, not built in the syntax. Discard is not natural (`f ; discard` keeps
+   `f`'s expected reward), as anticipated under Risks for the plan, and the first equation of
+   the contextual identity needs the suffix's kernel to be normalised, which every
+   interpreted diagram satisfies. Eight SA-Pass claims (`cid.*`) tie the prose to these
+   theorems.
