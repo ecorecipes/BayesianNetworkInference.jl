@@ -104,3 +104,14 @@ reward kernel.
   syntax. A certificate of a Julia composite shows that Julia's numbers match Lean's semantics
   for the composite as recorded. It does not show that Julia's composite is the Lean composite
   of the parts. That gap, CategoricalBayesianNetworks' "unproved adapter lemma", stays open.
+
+## Amendment (2026-10-19): the cost of the exact check
+
+The checker no longer sums over every generator state for each recorded cell. For each input
+state it accumulates the whole row of `K` and `W` in one pass over the generator states, into
+an array indexed by the output state read (`Certificate/Fast.lean`). The fast errors are
+proved equal to the cell-by-cell errors (`kErrorFast_eq`, `wErrorFast_eq`), so acceptance and
+every soundness theorem are unchanged. The cost falls from `|X| · |Y| · |Z|` weight
+evaluations to `|X| · |Z|`. On a benchmark with 8 input, 64 output and 1024 generator states,
+the checker's run time fell from 3.5 s to 1.3 s of CPU, the rest being parsing and the other
+stages.

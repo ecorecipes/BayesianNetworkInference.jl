@@ -77,5 +77,45 @@ states and a backward map on values.
 - The Lean results are about the reward-kernel semantics, like `Obstruction.lean`. That the
   play of a decision game is the `interpret` of a diagram is the existing interpretation
   theorem; that Julia's chain contexts are Lean's is checked numerically, not proved.
-- Open: the tensor of games (decision 2), behavioural strategies, and subgame-perfect
-  refinements that would rule out equilibria sustained by unreachable information states.
+- Open at the time: the tensor of games (decision 2), behavioural strategies, and
+  subgame-perfect refinements that would rule out equilibria sustained by unreachable
+  information states. All three are settled by the amendments below and ADR 0022.
+
+## Amendment (2026-10-19): the tensor
+
+The tensor of games is now defined in the Lean project (module `GameTensor`). `G ⊗ H` plays the
+tensor of the plays. A pair is an equilibrium in `(μ, c)` when each factor is one in the
+context of its marginal prior and the continuation the other factor induces, that is the other
+factor's reward and the continuation, averaged over its input and output.
+
+- **Product priors.** With a prior that is a product of probability vectors this context is
+  exact: the composite's expected utility is each factor's expected utility in it
+  (`tensor_eu_left`, `tensor_eu_right`). An equilibrium of two decision games is then exactly
+  a pair of mutual best responses (`tensor_decision_eq_iff`).
+- **Correlated priors.** No context of a factor alone is exact. In a witness with two equal
+  binary inputs and a payoff for matching outputs, the best response copies its input, yet
+  in no probability context of the first factor alone is that policy exactly its set of
+  equilibria (`correlated_no_factor_context`). This is decision 2's reason, now proved.
+  Exactness for correlated priors would need contexts whose continuation reads the input,
+  the history of full open games.
+
+Two SA-Pass claims tie the prose to these results: `cid.game-tensor`, and
+`cid.tensor-correlated` (weak). Julia's chain functions remain serial.
+
+## Amendment (2026-10-19): perfect equilibria
+
+The refinement that rules out equilibria sustained by unreachable information states is now
+defined and proved (Lean module `Perfection`):
+- a *perfect* decision game asks its strategy to maximise the value from every input state,
+  whatever the prior; for a nonnegative prior a perfect strategy is a best response;
+- in a series of perfect games the equilibria are found by backward induction: the suffix
+  perfect against the continuation, the prefix against the suffix's value function;
+- in a threat witness, not acting against an untested refusal is an equilibrium worth 1,
+  and the perfect equilibria are exactly the optimal strategies, worth 4.
+
+Julia's `regrets` and `is_equilibrium` take `perfect = true`. Each component's regret is then
+the largest gain over its joint input states, from the best response at each state against
+the component's continuation. Perfection is meaningful for components whose decisions observe
+their inputs: a policy cannot read a hidden input, so a component with one may have no
+perfect strategy. Two SA-Pass claims: `cid.perfect-equilibrium`, and `cid.threat-witness`
+(weak).

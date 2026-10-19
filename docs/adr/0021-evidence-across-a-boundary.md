@@ -108,14 +108,47 @@ ADR 0014 fixes what `ImpossibleEvidenceError` means and how a binary64 mass is t
   `continuation` widens. Plain vectors keep their old meaning and arithmetic.
 - The tests that expected evidence to be refused now check values against
   `InfluenceDiagrams`' `expected_utility` of the closed model with the evidence observed.
-- **Cost.** With evidence, `contextual_optimize` scores every strategy through `interpret`.
-  It does not delegate to `InfluenceDiagrams`' value-table search, whose `DecisionContext`
+- **Cost.** With evidence, `contextual_optimize` scored every strategy through `interpret`
+  (see the value-table amendment below). It does not delegate to `InfluenceDiagrams`' value-table search, whose `DecisionContext`
   semantics (`Σ_x μ(x) E[U + c | x]`) conditions on the prior's states, not on the evidence.
   It is exhaustive in the component's strategies, as before.
 - Reward certificates (ADR 0019) still refuse evidence. A certificate for a substochastic
   reward kernel would need a checker that does not assume normalised chance rows.
 - **Open:**
-  - the tensor of evidence-weighted interpretations;
-  - soft (likelihood) evidence in Julia, which the Lean weighting already covers;
-  - a value-table search with evidence in a context;
   - the refinement of the Julia functions to the Lean ones, which remains a numerical check.
+
+## Amendment (2026-10-19): likelihood evidence
+
+Julia now takes soft (virtual) evidence as well as hard evidence: `:X => [λ₁, λ₂, …]`, one
+entry in `[0, 1]` per state of `X`, the probability of an observation given each state. It
+contributes the likelihood as a factor exactly where hard evidence contributes an indicator,
+so decisions 1 to 4 apply unchanged. The Lean weighting of decision 5 (`Likelihood`) already
+covers it. Entries are bounded by one so that a state still has mass at most one. The
+evidence errors of ADR 0014 (`ImpossibleEvidenceError`, `IndeterminatePosteriorError`)
+record only the hard evidence, since their field holds states and their binding is frozen.
+`optimize` on a closed composite refuses likelihood evidence, because an `InfluenceDiagrams`
+model observes states only; `contextual_optimize` on the composite takes it. The tests check
+that a likelihood on a variable is the hard observation of a virtual child with that
+likelihood.
+
+## Amendment (2026-10-19): tensor
+
+The evidence-weighted interpretation is also functorial under tensor (`interpretE_tensor`,
+read through the canonical bijection of assignments, as `interpret_tensor` is). Evidence on
+components placed side by side is the union of their evidence.
+
+## Amendment (2026-10-19): value tables
+
+`contextual_optimize` with evidence no longer scores every strategy through `interpret`. One
+pass over the component's joint states, with the decisions left free, accumulates the
+evidence mass and the evidence-weighted value of every joint state of the decisions'
+information and action variables, with the state and the effect folded in as factors on the
+inputs and outputs. Each strategy is then scored by summing the cells it selects, as
+`InfluenceDiagrams`' value-table search does. ADR 0014's trust rule still holds:
+- a strategy whose summed mass is below binary64's normal range is scored by
+  `conditional_value`, with its exact fallback;
+- a pass that formed a product of nonzero operands below `floatmin`, or met a tolerated
+  negative entry with evidence, falls back to scoring every strategy so
+  (`exact_fallback = true`).
+
+`brute_force = true` keeps the per-strategy path as the oracle the tests compare with.
