@@ -43,8 +43,7 @@ composite of the parts' reward kernels, can be checked directly.
    for the semantics, cell by cell, up to the stated bound. One SA-Pass claim,
    `cid.composition-certificate`, ties the prose to it.
 4. **Not claimed.** That the composite's syntax is `IDNet.comp` of the parts' (an isomorphism
-   of nets), and anything for `glue`, `otimes` or `oapply`, which a later version could add
-   the same way (the tensor's cells multiply).
+   of nets), and anything for `glue` or `oapply` (see the amendment for `otimes`).
 
 ## Consequences
 
@@ -56,3 +55,20 @@ composite of the parts' reward kernels, can be checked directly.
 - Cost: the composition stage sums over the middle coordinates for every pair of outer
   coordinates, `|X| · |Y| · |Z|` cell products of recorded numbers, on top of the three
   certificates' own checks.
+
+## Amendment (2026-10-20): tensor certificates
+
+`OpenInfluence.TensorCertificate/v1` has the same four keys, with `composite` the reward
+certificate of `otimes(A, B)`. Julia writes it with `export_tensor_certificate`, and
+`check_composition` reads either kind by its format string. The checker accepts when:
+- each certificate is accepted;
+- the composite's input and output rows have the attributes of the parts' rows, side by
+  side, `A`'s first (`TensorAligned`);
+- every recorded cell is within `τ` of the product of the parts' cells: `K_A K_B`, and
+  `W_A K_B + K_A W_B` for the reward.
+
+`tensor_sound_K` and `tensor_sound_W` bound, at every joined coordinate, the gap between the
+decoded composite's exact tables and the tensor of the decoded parts' exact tables. One more
+SA-Pass claim, `cid.tensor-certificate`, ties the prose to them. `glue` and `oapply` remain
+open: a glued composite's boundary is not a concatenation or a match of the parts' rows.
+
