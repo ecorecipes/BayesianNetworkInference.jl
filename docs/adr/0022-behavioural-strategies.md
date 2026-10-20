@@ -71,3 +71,17 @@ can be randomised.
   behavioural strategy beats the deterministic optimum, with or without evidence.
 - Open: mixed equilibria of chains whose components share policies, and a randomised search
   for such chains.
+
+## Amendment (2026-10-20): one randomised decision
+
+The Lean module `Behaviour` now proves sufficiency directly for one randomised decision. A
+stochastic kernel between finite spaces is the mixture of the deterministic kernels of its
+rules, each weighted by the probability of drawing it (`kernel_eq_mix_ofFun`, from
+`InfluenceDiagrams`' `sum_table_indicator`). Mixtures compose affinely, in series and beside
+other wires (`mix_comp`, `comp_mix`, `mix_tensor`). So a decision that draws its action from
+`k` given its information, placed in a serial context beside other wires, has expected
+utility at most that of some deterministic rule in its place (`single_decision_sufficiency`).
+One SA-Pass claim, `cid.single-decision`, ties the prose to it. Several decisions at once in
+an `IDNet` are still covered through `InfluenceDiagrams`' finite model, not proved for the
+syntax here.
+
