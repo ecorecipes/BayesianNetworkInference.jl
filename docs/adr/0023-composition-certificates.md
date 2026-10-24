@@ -72,3 +72,10 @@ decoded composite's exact tables and the tensor of the decoded parts' exact tabl
 SA-Pass claim, `cid.tensor-certificate`, ties the prose to them. `glue` and `oapply` remain
 open: a glued composite's boundary is not a concatenation or a match of the parts' rows.
 
+
+## Amendment (2026-10-21): colimit certificates
+
+ADR 0025 adds colimit certificates. They record Catlab's cocone maps and check that the
+composite is the colimit of its parts, for `compose`, `otimes`, `glue` and `oapply`, which
+gives the composite's semantics exactly rather than within a bound. The composition and
+tensor certificates of this ADR are kept: they need no legs and check the recorded cells.

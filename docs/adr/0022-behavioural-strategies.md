@@ -85,3 +85,23 @@ One SA-Pass claim, `cid.single-decision`, ties the prose to it. Several decision
 an `IDNet` are still covered through `InfluenceDiagrams`' finite model, not proved for the
 syntax here.
 
+
+## Amendment (2026-10-21): every decision at once
+
+The Lean module `Kuhn` proves sufficiency in the syntax, for every decision of an open
+influence diagram at once, when no two decision generators share a label
+(`DistinctDecisions`):
+- `kuhn_eu`: for every behavioural strategy, prior and continuation, some deterministic
+  strategy has at least its expected utility;
+- `kuhn_conditional`: given nonnegative likelihoods on the generators' values (the
+  behavioural counterpart `interpretBE` of ADR 0021's `interpretE`), a state whose reward
+  vanishes where its mass does and an effect whose value vanishes where its likelihood does,
+  if the evidence has positive mass, some deterministic strategy gives it positive mass and
+  at least the same conditional value.
+
+The argument is one row of the strategy at a time. A label used by one generator reads one row
+at each internal assignment, so the semantics is the mixture, over that row's distribution, of
+the semantics with the row replaced by point masses (`kernelAt_eq_mix`). Only the finitely
+many rows that decisions read matter. Decision 3's justification no longer rests on
+`InfluenceDiagrams`' finite model alone. One SA-Pass claim, `cid.kuhn`, ties the prose to it.
+Shared policies, the case this excludes, are ADR 0024.
