@@ -86,3 +86,20 @@ each value comes from the part that generates it.
   wrong place, a composite whose recorded policy differs from its part's, and binary64.
 - Cost: the structure check compares every pair of part variables, `O(V²)`, besides the
   reward certificates' own checks.
+
+## Amendment (2026-10-24): the tensor up to isomorphism
+
+The Lean module `SyntaxMonoidal` adds the tensor to the quotient, following
+CategoricalBayesianNetworks' construction for nets and extending every bijection to utility
+generators:
+- isomorphism is a congruence for the tensor, and interchange holds up to isomorphism;
+- the associator, unitors and symmetry are wiring along bijections of ports, and their
+  naturality is a slide through wiring;
+- `IDCat` is a symmetric monoidal category (`IDCat.monoidal`, `IDCat.symmetric`);
+- for every behavioural strategy the semantic functor is braided strong monoidal
+  (`braidedFunctor`), its comparison maps the canonical bijections of boundary assignments.
+
+One SA-Pass claim, `cid.syntax-monoidal`, ties the prose to it. The colimit witness is still
+checked on the decoded records, not turned into an `IDNet.Iso`. CategoricalBayesianNetworks'
+certificate theorem takes such a net isomorphism as a hypothesis for the same reason: the
+decoded diagrams' interfaces are distinct Lean terms, related by equalities that need casts.

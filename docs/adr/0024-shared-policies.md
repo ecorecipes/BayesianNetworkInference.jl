@@ -71,3 +71,24 @@ ordinary condition that no unilateral change gains.
   for two uses; more uses follow from the product rule, which holds for any serial composite.
 - No evidence is taken by the shared-policy functions: with evidence the first-order term of
   a conditional value is a ratio's derivative, which is not implemented.
+
+## Amendment (2026-10-24): given evidence
+
+The shared-policy functions take `evidence`, and chain contexts that carry evidence mass, as
+`regrets` does (ADR 0021). The value is then the chain's conditional value `V = N / Z`, a
+ratio, and the gain of a use is the first-order change of `V` from changing that use alone,
+`(N_u - V Z_u) / Z`. Here `N_u` and `Z_u` are the evidence-weighted value and the evidence mass
+with the use changed, each in its component's context. Each use's `N_u` and `Z_u` are affine
+in its policy table, so the regret is again found one information state at a time.
+
+The Lean module `SharedPolicy` proves the condition. The evidence mass and value along a path
+have first-order terms (`HasDeriv.mass`, `HasDeriv.value`). At an optimum of the ratio, the
+first-order term's value less `V` times its mass is at most zero
+(`first_order_conditional`). For two uses, the per-use first-order changes sum to at most zero
+(`shared_optimum_first_order_conditional`). One SA-Pass claim,
+`cid.shared-first-order-conditional`, ties the prose to it.
+
+The gains divide by the chain's mass, so a mass below binary64's normal range is an
+`ArgumentError`, and an impossible observation raises `ImpossibleEvidenceError`.
+`shared_policy_search` skips strategies under which the evidence is impossible, and raises
+`ImpossibleEvidenceError` when every strategy of its grid is one.
