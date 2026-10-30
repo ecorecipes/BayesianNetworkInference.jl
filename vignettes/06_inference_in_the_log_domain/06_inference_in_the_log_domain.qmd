@@ -104,11 +104,32 @@ end
 
 At 300 sites the mass is an ordinary Float64 and the default backend answers directly. At
 320 the mass is subnormal: it is not zero (so `mass_status` is still `:finite`), but most
-of its significand has gone, and a posterior normalised by it would be wrong in the fourth
-decimal, `[0.901, 0.099]`. At 340 it underflows to zero, which Float64 cannot tell apart
+of its significand has gone. At 340 it underflows to zero, which Float64 cannot tell apart
 from a contradiction. The default backend trusts a mass only when it is a normal positive
 number; in the other two regimes it reruns the query in exact arithmetic and says so in the
-diagnostics' `exact_fallback`. Both paths return the exact answer throughout:
+diagnostics' `exact_fallback`.
+
+What the subnormal mass would have cost is worth seeing, since the backend declines to pay
+it. An empty query returns the mass as Float64 computed it, with no exact fallback (ADR
+0011), so putting the query variable into the evidence recovers the two cells the backend
+would otherwise have divided, and they can be normalised by hand:
+
+```{julia}
+let
+    n = 320
+    mm, vv = detection_chain(n)
+    ev = Dict(v => :yes for v in vv[1:(n - 1)])
+    mass = only(first(infer(mm, Symbol[]; evidence = ev)).table)
+    cells = [only(first(infer(mm, Symbol[];
+                              evidence = merge(ev, Dict(vv[n] => s)))).table)
+             for s in (:no, :yes)]
+    (mass = mass, subnormal = issubnormal(mass),
+     normalised_by_it = round.(cells ./ sum(cells); digits = 4))
+end
+```
+
+That is the answer the default backend would have returned had it trusted the mass. Both
+paths it does take return the exact answer throughout:
 
 ```{julia}
 all(compare(n).default == exact && compare(n).log_domain == exact
