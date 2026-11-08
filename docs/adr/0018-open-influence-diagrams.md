@@ -69,8 +69,13 @@ general, evidence composition, and the refinement to the Julia implementation al
         variables, never hidden ones. This is the bundle's information locality.
      4. Utility scopes may read any apex variable, inputs included.
      5. The derived causal-plus-information graph is acyclic.
-     6. Composition preserves no-forgetting when both components and the boundary's observed
-        set satisfy it. This is checked, not assumed.
+     6. Composition introduces no forgetting: a decision may not come to ignore a variable
+        that an earlier decision knew, or that earlier decision's action, through the act of
+        composing. A component that forgets *within itself* is a limited-memory component
+        and is left alone, so its own violations are excused and only what the composite
+        adds is reported. When every component has no-forgetting nothing is excused and this
+        is the original statement, that the composite has no-forgetting too. This is
+        checked, not assumed.
    - Utilities and decisions stay inside components. Only variables cross the boundary; reward
      crosses only through the semantics.
 3. **Semantics for a fixed strategy: the expectation-semiring kernel category.**
@@ -150,6 +155,18 @@ settled seven points that the original record left open or stated differently.
    order of `InfluenceDiagrams.jl`'s `is_no_forgetting` would make any tensor of two diagrams
    with decisions fail. The two notions agree when paths order the decisions totally.
    `no_forgetting = false` opts out and yields a limited-memory composite.
+
+   **Amended 2026-11-08.** Rule 6 first read "composition preserves no-forgetting when both
+   components satisfy it", and the check returned early, silently, when a component did not.
+   The precondition therefore failed in silence: `no_forgetting = true` read as a guarantee
+   while giving none, and a decision could come to ignore a variable belonging to another
+   component with nothing raised to say so. An audit of the sibling
+   `AcceleratedAdaptation.jl` vignettes found this in seven diagrams; four of them were
+   scoring a model whose published value changed once the missing arc was added, and two had
+   published a conclusion that inverted. The rule is now the stronger and more useful claim
+   above: a component's own forgetting is excused, and forgetting that composition
+   introduces is an error. The weaker statement is the special case where no component
+   forgets, so no composite that validated before fails now.
 4. **Strategies.** A strategy is `InfluenceDiagrams.jl`'s `Strategy`, keyed by decision name.
    `merge_strategies` is the disjoint union and raises `DuplicatePolicyError` on a name in
    two components. Stochastic policies are refused, as decision 4 requires.
